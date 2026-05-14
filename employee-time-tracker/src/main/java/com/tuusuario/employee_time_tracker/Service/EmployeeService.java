@@ -1,5 +1,6 @@
 package com.tuusuario.employee_time_tracker.Service;
 
+import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Employee;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,7 @@ public class EmployeeService {
     public Employee getEmployeeById(Long id) {
         return employeeRepository.findById(id)
                 .orElseThrow(()->
-                        new RuntimeException("Employee not found with id: "+ id));
+                        new ResourceNotFoundException("Employee not found with id: "+ id));
     }
 
     //UPDATE
@@ -47,9 +48,18 @@ public class EmployeeService {
     }
 
     //DELETE
-    public void desactivateEmployee(Long id) {
+    public void deactivateEmployee(Long id) {
         Employee employee = getEmployeeById(id);
         employee.setActive(false);
         employeeRepository.save(employee);
+    }
+
+    public Employee activateEmployee(Long id) {
+        Employee employee = employeeRepository.findById(id)
+                .orElseThrow(()-> new RuntimeException("Employee not found with id: "+ id));
+
+        employee.setActive(true);
+
+        return employeeRepository.save(employee);
     }
 }
