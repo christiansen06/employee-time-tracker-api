@@ -27,6 +27,6 @@ public class Employee {
     @Column(nullable = false)
     private String position;
 
-    @Builder.Default
-    private boolean active = true;
+    @Column(nullable = false)
+    private Boolean active;
 }
