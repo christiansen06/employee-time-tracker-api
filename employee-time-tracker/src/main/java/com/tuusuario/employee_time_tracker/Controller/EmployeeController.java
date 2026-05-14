@@ -1,8 +1,13 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
+import com.tuusuario.employee_time_tracker.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Employee;
 import com.tuusuario.employee_time_tracker.Service.EmployeeService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,8 +20,20 @@ public class EmployeeController {
 
     //CREATE
     @PostMapping
-    public Employee createEmployee(@RequestBody Employee employee) {
-        return employeeService.createEmployee(employee);
+    public ResponseEntity<Employee> createEmployee(
+            @Valid @RequestBody EmployeeRequestDTO dto) {
+
+        Employee employee = Employee.builder()
+                .name(dto.getName())
+                .lastName(dto.getLastName())
+                .email(dto.getEmail())
+                .position(dto.getPosition())
+                .active(true)
+                .build();
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(employeeService.createEmployee(employee));
     }
 
     //READ ALL
@@ -37,9 +54,15 @@ public class EmployeeController {
         return employeeService.updateEmployee(id, employee);
     }
 
-    //DELETE
-    @PatchMapping("/{id}/desactivate")
-    public void desactivateEmployee(@PathVariable Long id) {
-        employeeService.desactivateEmployee(id);
+    //SOFT DELETE
+    @PatchMapping("/{id}/deactivate")
+    public void deactivateEmployee(@PathVariable Long id) {
+        employeeService.deactivateEmployee(id);
+    }
+
+    //RE-ACTIVATE
+    @PatchMapping("/{id}/activate")
+    public ResponseEntity<Employee> activateEmployee(@PathVariable Long id) {
+        return ResponseEntity.ok(employeeService.activateEmployee(id));
     }
 }
