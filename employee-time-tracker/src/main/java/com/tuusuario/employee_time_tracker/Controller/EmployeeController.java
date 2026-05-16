@@ -1,13 +1,12 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
 import com.tuusuario.employee_time_tracker.Dto.EmployeeRequestDTO;
-import com.tuusuario.employee_time_tracker.Model.Employee;
+import com.tuusuario.employee_time_tracker.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Service.EmployeeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,38 +19,32 @@ public class EmployeeController {
 
     //CREATE
     @PostMapping
-    public ResponseEntity<Employee> createEmployee(
+    public ResponseEntity<EmployeeResponseDTO> createEmployee(
             @Valid @RequestBody EmployeeRequestDTO dto) {
-
-        Employee employee = Employee.builder()
-                .name(dto.getName())
-                .lastName(dto.getLastName())
-                .email(dto.getEmail())
-                .position(dto.getPosition())
-                .active(true)
-                .build();
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(employeeService.createEmployee(employee));
+                .body(employeeService.createEmployee(dto));
     }
 
     //READ ALL
     @GetMapping
-    public List<Employee> getAllEmployees() {
+    public List<EmployeeResponseDTO> getAllEmployees() {
         return employeeService.getAllEmployees();
     }
 
     //READ BY ID
     @GetMapping("/{id}")
-    public Employee getEmployeeById(@PathVariable Long id) {
+    public EmployeeResponseDTO getEmployeeById(@PathVariable Long id) {
         return employeeService.getEmployeeById(id);
     }
 
     //UPDATE
     @PutMapping("/{id}")
-    public Employee updateEmployee(@PathVariable Long id, @RequestBody Employee employee) {
-        return employeeService.updateEmployee(id, employee);
+    public EmployeeResponseDTO updateEmployee(
+            @PathVariable Long id,
+            @Valid @RequestBody EmployeeRequestDTO dto) {
+        return employeeService.updateEmployee(id, dto);
     }
 
     //SOFT DELETE
@@ -62,7 +55,7 @@ public class EmployeeController {
 
     //RE-ACTIVATE
     @PatchMapping("/{id}/activate")
-    public ResponseEntity<Employee> activateEmployee(@PathVariable Long id) {
+    public ResponseEntity<EmployeeResponseDTO> activateEmployee(@PathVariable Long id) {
         return ResponseEntity.ok(employeeService.activateEmployee(id));
     }
 }

@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Dto;
 
 import com.tuusuario.employee_time_tracker.Enums.Role;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
@@ -13,5 +14,6 @@ public class RegisterRequestDTO {
     @NotBlank(message = "Password is required")
     private String password;
 
+    @NotNull(message = "Role is required")
     private Role role;
 }
