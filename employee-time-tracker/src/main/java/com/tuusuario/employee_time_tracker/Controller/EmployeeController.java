@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Controller;
 
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
 import com.tuusuario.employee_time_tracker.Service.EmployeeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -57,5 +58,17 @@ public class EmployeeController {
     @PatchMapping("/{id}/activate")
     public ResponseEntity<EmployeeResponseDTO> activateEmployee(@PathVariable Long id) {
         return ResponseEntity.ok(employeeService.activateEmployee(id));
+    }
+
+    //Total Historico
+    @GetMapping("/{id}/worked-hours")
+    public ResponseEntity<WorkedHoursResponseDTO> getWorkedHours(@PathVariable Long id) {
+        return ResponseEntity.ok(employeeService.getWorkedHours(id));
+    }
+
+    //Horas Semanales
+    @GetMapping("/{id}/worked-hours/week")
+    public ResponseEntity<WorkedHoursResponseDTO> getWeeklyWorkedHours(@PathVariable Long id) {
+        return ResponseEntity.ok(employeeService.getWeeklyWorkedHours(id));
     }
 }
