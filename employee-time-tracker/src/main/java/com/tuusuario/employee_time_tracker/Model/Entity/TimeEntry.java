@@ -1,10 +1,12 @@
-package com.tuusuario.employee_time_tracker.Model;
+package com.tuusuario.employee_time_tracker.Model.Entity;
 
-import com.tuusuario.employee_time_tracker.Enums.TimeEntryStatus;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "time_entries")
@@ -22,10 +24,6 @@ public class TimeEntry {
 
     private LocalDateTime clockOut;
 
-    private LocalDateTime breakStart;
-
-    private LocalDateTime breakEnd;
-
     @Enumerated(EnumType.STRING)
     private TimeEntryStatus status;
 
@@ -33,4 +31,8 @@ public class TimeEntry {
     @JoinColumn(name = "employee_id")
     @JsonBackReference
     private Employee employee;
+
+    @OneToMany(mappedBy = "timeEntry")
+    @JsonManagedReference
+    private List<BreakEntry> breaks;
 }

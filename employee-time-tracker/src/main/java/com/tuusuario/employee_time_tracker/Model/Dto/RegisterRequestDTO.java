@@ -1,6 +1,6 @@
-package com.tuusuario.employee_time_tracker.Dto;
+package com.tuusuario.employee_time_tracker.Model.Dto;
 
-import com.tuusuario.employee_time_tracker.Enums.Role;
+import com.tuusuario.employee_time_tracker.Model.Enums.Role;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;

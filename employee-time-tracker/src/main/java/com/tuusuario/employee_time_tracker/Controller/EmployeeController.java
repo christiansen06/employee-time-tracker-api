@@ -1,7 +1,7 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
-import com.tuusuario.employee_time_tracker.Dto.EmployeeRequestDTO;
-import com.tuusuario.employee_time_tracker.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Service.EmployeeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

@@ -1,6 +1,6 @@
 package com.tuusuario.employee_time_tracker.Service;
 
-import com.tuusuario.employee_time_tracker.Model.User;
+import com.tuusuario.employee_time_tracker.Model.Entity.User;
 import com.tuusuario.employee_time_tracker.Repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;

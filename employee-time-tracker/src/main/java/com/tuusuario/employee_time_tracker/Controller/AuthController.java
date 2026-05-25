@@ -1,8 +1,8 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
-import com.tuusuario.employee_time_tracker.Dto.AuthRequestDTO;
-import com.tuusuario.employee_time_tracker.Dto.AuthResponseDTO;
-import com.tuusuario.employee_time_tracker.Dto.RegisterRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.AuthRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.AuthResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.RegisterRequestDTO;
 import com.tuusuario.employee_time_tracker.Service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

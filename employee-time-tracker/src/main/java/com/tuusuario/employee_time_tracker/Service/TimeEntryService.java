@@ -1,8 +1,8 @@
 package com.tuusuario.employee_time_tracker.Service;
 
-import com.tuusuario.employee_time_tracker.Enums.TimeEntryStatus;
-import com.tuusuario.employee_time_tracker.Model.Employee;
-import com.tuusuario.employee_time_tracker.Model.TimeEntry;
+import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
+import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
+import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ public class TimeEntryService {
 
         TimeEntry timeEntry = TimeEntry.builder()
                 .clockIn(LocalDateTime.now())
-                .status(TimeEntryStatus.WORKING)
+                .status(TimeEntryStatus.CLOCKED_IN)
                 .employee(employee)
                 .build();
 
