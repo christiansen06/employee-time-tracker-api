@@ -1,6 +1,6 @@
-package com.tuusuario.employee_time_tracker.Model;
+package com.tuusuario.employee_time_tracker.Model.Entity;
 
-import com.tuusuario.employee_time_tracker.Enums.Role;
+import com.tuusuario.employee_time_tracker.Model.Enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
 

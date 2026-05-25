@@ -1,6 +1,6 @@
 package com.tuusuario.employee_time_tracker.Repository;
 
-import com.tuusuario.employee_time_tracker.Model.Employee;
+import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

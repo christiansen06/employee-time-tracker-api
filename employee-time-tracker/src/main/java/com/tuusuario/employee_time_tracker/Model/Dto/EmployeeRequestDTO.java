@@ -1,4 +1,4 @@
-package com.tuusuario.employee_time_tracker.Dto;
+package com.tuusuario.employee_time_tracker.Model.Dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

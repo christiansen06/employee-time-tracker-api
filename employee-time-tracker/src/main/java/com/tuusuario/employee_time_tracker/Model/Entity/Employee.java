@@ -1,4 +1,4 @@
-package com.tuusuario.employee_time_tracker.Model;
+package com.tuusuario.employee_time_tracker.Model.Entity;
 
 import jakarta.persistence.*;
 import lombok.*;

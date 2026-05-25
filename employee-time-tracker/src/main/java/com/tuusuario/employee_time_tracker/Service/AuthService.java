@@ -1,9 +1,9 @@
 package com.tuusuario.employee_time_tracker.Service;
 
-import com.tuusuario.employee_time_tracker.Dto.AuthRequestDTO;
-import com.tuusuario.employee_time_tracker.Dto.AuthResponseDTO;
-import com.tuusuario.employee_time_tracker.Dto.RegisterRequestDTO;
-import com.tuusuario.employee_time_tracker.Model.User;
+import com.tuusuario.employee_time_tracker.Model.Dto.AuthRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.AuthResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.RegisterRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Entity.User;
 import com.tuusuario.employee_time_tracker.Repository.UserRepository;
 import com.tuusuario.employee_time_tracker.Util.JwtUtil;
 import lombok.RequiredArgsConstructor;

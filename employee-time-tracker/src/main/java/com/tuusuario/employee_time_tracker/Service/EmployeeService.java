@@ -1,9 +1,9 @@
 package com.tuusuario.employee_time_tracker.Service;
 
-import com.tuusuario.employee_time_tracker.Dto.EmployeeRequestDTO;
-import com.tuusuario.employee_time_tracker.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
-import com.tuusuario.employee_time_tracker.Model.Employee;
+import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
