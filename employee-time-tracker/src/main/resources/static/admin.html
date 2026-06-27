@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BuBa · Admin</title>
+  <style>
+    :root {
+      --bg:#0f172a; --card:#1e293b; --muted:#94a3b8; --text:#f1f5f9;
+      --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --blue:#3b82f6; --border:#334155;
+    }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      background:var(--bg); color:var(--text); min-height:100vh; }
+    .wrap { max-width:920px; margin:0 auto; padding:20px; }
+    h1 { letter-spacing:1px; margin:0; }
+    .muted { color:var(--muted); }
+    input, select { width:100%; padding:12px; border-radius:10px; border:1px solid var(--border);
+      background:#0b1220; color:var(--text); font-size:15px; }
+    button { border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;
+      color:#fff; padding:10px 14px; transition:opacity .15s, transform .05s; }
+    button:active { transform:scale(.97); }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-primary{background:var(--blue);} .btn-green{background:var(--green);}
+    .btn-amber{background:var(--amber);} .btn-red{background:var(--red);}
+    .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:18px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+    .tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+    .tab { background:#0b1220; border:1px solid var(--border); color:var(--muted); }
+    .tab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); font-size:14px; }
+    th { color:var(--muted); font-weight:600; }
+    .badge { font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px; }
+    .badge.on{background:rgba(34,197,94,.18);color:#86efac;}
+    .badge.off{background:rgba(148,163,184,.18);color:var(--muted);}
+    .badge.warn{background:rgba(245,158,11,.18);color:#fcd34d;}
+    .grid-form { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    label { font-size:13px; color:var(--muted); display:block; margin-bottom:4px; }
+    .msg { margin-top:12px; padding:10px; border-radius:8px; font-size:14px; display:none; }
+    .msg.error{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.4);}
+    .msg.ok{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.4);}
+    .hidden{display:none;}
+    .hours-big{font-size:30px;font-weight:700;}
+    .actions button{padding:7px 10px;font-size:13px;}
+    @media(max-width:560px){ .grid-form{grid-template-columns:1fr;} td .actions{flex-direction:column;} }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN -->
+  <section id="loginView">
+    <div class="card" style="max-width:380px;margin:60px auto;">
+      <h1>BuBa <span class="muted" style="font-size:16px;">Admin</span></h1>
+      <p class="muted">Panel de gestión</p>
+      <form id="loginForm">
+        <label>Usuario</label>
+        <input id="user" autocomplete="username" required>
+        <label style="margin-top:10px;">Contraseña</label>
+        <input id="pass" type="password" autocomplete="current-password" required>
+        <button class="btn-primary" style="width:100%;margin-top:16px;" id="loginBtn">Ingresar</button>
+      </form>
+      <div id="loginMsg" class="msg error"></div>
+    </div>
+  </section>
+
+  <!-- PANEL -->
+  <section id="panel" class="hidden">
+    <div class="topbar">
+      <h1>BuBa <span class="muted" style="font-size:16px;">Admin</span></h1>
+      <button class="btn-ghost" id="logoutBtn">Salir</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="empleados">Empleados</button>
+      <button class="tab" data-tab="ahora">Quién trabaja ahora</button>
+      <button class="tab" data-tab="reportes">Reportes</button>
+    </div>
+
+    <!-- EMPLEADOS -->
+    <div id="tab-empleados">
+      <div class="card">
+        <h3 style="margin-top:0;">Nuevo empleado</h3>
+        <div class="grid-form">
+          <div><label>Nombre</label><input id="nName"></div>
+          <div><label>Apellido</label><input id="nLast"></div>
+          <div><label>Email</label><input id="nEmail"></div>
+          <div><label>Puesto</label><input id="nPos"></div>
+        </div>
+        <button class="btn-green" style="margin-top:14px;" id="createBtn">Crear empleado</button>
+        <div id="createMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <h3 style="margin:0;">Empleados</h3>
+          <button class="btn-ghost" id="reloadEmps">↻ Actualizar</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px;">
+          <table id="empTable">
+            <thead><tr><th>Nombre</th><th>Puesto</th><th>Estado</th><th>PIN</th><th>Acciones</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="empMsg" class="msg"></div>
+      </div>
+    </div>
+
+    <!-- AHORA -->
+    <div id="tab-ahora" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <h3 style="margin:0;">Trabajando ahora</h3>
+          <button class="btn-ghost" id="reloadNow">↻ Actualizar</button>
+        </div>
+        <div id="nowList" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div id="tab-reportes" class="hidden">
+      <div class="card">
+        <h3 style="margin-top:0;">Horas trabajadas</h3>
+        <label>Empleado</label>
+        <select id="repEmp"></select>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn-primary" id="repWeek">Esta semana</button>
+          <button class="btn-ghost" id="repTotal">Histórico total</button>
+        </div>
+        <div id="repResult" style="margin-top:16px;text-align:center;display:none;">
+          <div class="hours-big" id="repHours">–</div>
+          <div class="muted" id="repMeta"></div>
+        </div>
+        <div id="repMsg" class="msg"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const TOKEN_KEY = "buba_admin_token";
+  const $ = (id) => document.getElementById(id);
+  const token = () => localStorage.getItem(TOKEN_KEY);
+
+  async function api(path, method="GET", body=null) {
+    const opts = { method, headers:{ "Authorization":"Bearer "+token() } };
+    if (body){ opts.headers["Content-Type"]="application/json"; opts.body=JSON.stringify(body); }
+    const res = await fetch(path, opts);
+    let data=null; try { data=await res.json(); } catch(_){}
+    if (!res.ok) throw { status:res.status, message:(data&&data.message)||("Error "+res.status) };
+    return data;
+  }
+  function flash(el, text, type){ el.textContent=text; el.className="msg "+(type||""); el.style.display=text?"block":"none"; }
+
+  // LOGIN
+  $("loginForm").addEventListener("submit", async (e)=>{
+    e.preventDefault(); flash($("loginMsg"),""); $("loginBtn").disabled=true;
+    try {
+      const res = await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username:$("user").value,password:$("pass").value})});
+      const data = await res.json();
+      if (!res.ok) throw { message:data.message||"Credenciales inválidas" };
+      localStorage.setItem(TOKEN_KEY,data.token);
+      showPanel();
+    } catch(err){ flash($("loginMsg"), err.message, "error"); }
+    finally { $("loginBtn").disabled=false; }
+  });
+  $("logoutBtn").addEventListener("click", ()=>{ localStorage.removeItem(TOKEN_KEY); showLogin(); });
+
+  // TABS
+  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    ["empleados","ahora","reportes"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
+    if (t.dataset.tab==="ahora") loadNow();
+    if (t.dataset.tab==="reportes") loadEmpOptions();
+  }));
+
+  // EMPLEADOS
+  $("createBtn").addEventListener("click", async ()=>{
+    flash($("createMsg"),"");
+    const body={ name:$("nName").value.trim(), lastName:$("nLast").value.trim(),
+      email:$("nEmail").value.trim(), position:$("nPos").value.trim() };
+    if(!body.name||!body.lastName||!body.email||!body.position){ flash($("createMsg"),"Completá todos los campos.","error"); return; }
+    try {
+      const emp = await api("/api/employees","POST",body);
+      flash($("createMsg"),"Empleado creado: "+emp.name+" "+emp.lastName+". Ahora asignale un PIN.","ok");
+      ["nName","nLast","nEmail","nPos"].forEach(id=>$(id).value="");
+      loadEmployees();
+    } catch(err){ handle(err,$("createMsg")); }
+  });
+  $("reloadEmps").addEventListener("click", loadEmployees);
+
+  async function loadEmployees(){
+    flash($("empMsg"),"");
+    try {
+      const emps = await api("/api/employees");
+      const tb = $("empTable").querySelector("tbody"); tb.innerHTML="";
+      if(!emps.length){ tb.innerHTML='<tr><td colspan="5" class="muted">Sin empleados todavía.</td></tr>'; return; }
+      emps.forEach(e=>{
+        const tr=document.createElement("tr");
+        const estado = e.active ? '<span class="badge on">Activo</span>' : '<span class="badge off">Inactivo</span>';
+        const pin = e.hasPin ? '<span class="badge on">Sí</span>' : '<span class="badge warn">Falta</span>';
+        const toggle = e.active
+          ? '<button class="btn-ghost" data-act="deactivate" data-id="'+e.id+'">Desactivar</button>'
+          : '<button class="btn-green" data-act="activate" data-id="'+e.id+'">Activar</button>';
+        tr.innerHTML='<td>'+e.name+' '+e.lastName+'</td><td>'+e.position+'</td><td>'+estado+'</td><td>'+pin+'</td>'+
+          '<td><div class="row actions"><button class="btn-amber" data-act="pin" data-id="'+e.id+'">PIN</button>'+toggle+'</div></td>';
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>empAction(b.dataset.act,b.dataset.id)));
+    } catch(err){ handle(err,$("empMsg")); }
+  }
+
+  async function empAction(act,id){
+    flash($("empMsg"),"");
+    try {
+      if(act==="pin"){
+        const pin = prompt("PIN de 4 a 6 dígitos para fichar:");
+        if(pin===null) return;
+        if(!/^\d{4,6}$/.test(pin)){ flash($("empMsg"),"El PIN debe ser de 4 a 6 dígitos.","error"); return; }
+        await api("/api/employees/"+id+"/pin","PUT",{pin});
+        flash($("empMsg"),"PIN asignado.","ok");
+      } else if(act==="deactivate"){
+        await api("/api/employees/"+id+"/deactivate","PATCH");
+      } else if(act==="activate"){
+        await api("/api/employees/"+id+"/activate","PATCH");
+      }
+      loadEmployees();
+    } catch(err){ handle(err,$("empMsg")); }
+  }
+
+  // AHORA
+  $("reloadNow").addEventListener("click", loadNow);
+  async function loadNow(){
+    const cont=$("nowList"); cont.innerHTML='<span class="muted">Cargando…</span>';
+    let html="";
+    const entries = await safe("/api/analytics/active-time-entries");
+    const breaks = await safe("/api/analytics/active-breaks");
+    const onBreakIds = new Set((breaks||[]).map(b=>b.employeeId));
+    if(!entries || !entries.length){
+      html='<p class="muted">Nadie fichado en este momento.</p>';
+    } else {
+      html='<table><thead><tr><th>Empleado</th><th>Estado</th><th>Desde</th></tr></thead><tbody>';
+      entries.forEach(e=>{
+        const enBreak = onBreakIds.has(e.employeeId);
+        const badge = enBreak ? '<span class="badge warn">En break</span>' : '<span class="badge on">Trabajando</span>';
+        html+='<tr><td>'+e.employeeName+'</td><td>'+badge+'</td><td>'+fmt(e.clockIn)+'</td></tr>';
+      });
+      html+='</tbody></table>';
+    }
+    cont.innerHTML=html;
+  }
+
+  // REPORTES
+  async function loadEmpOptions(){
+    try {
+      const emps = await api("/api/employees");
+      const sel=$("repEmp"); sel.innerHTML="";
+      emps.forEach(e=>{ const o=document.createElement("option"); o.value=e.id; o.textContent=e.name+" "+e.lastName; sel.appendChild(o); });
+    } catch(err){ handle(err,$("repMsg")); }
+  }
+  $("repWeek").addEventListener("click", ()=>report("week"));
+  $("repTotal").addEventListener("click", ()=>report("total"));
+  async function report(kind){
+    flash($("repMsg"),""); const id=$("repEmp").value;
+    if(!id){ flash($("repMsg"),"Elegí un empleado.","error"); return; }
+    try {
+      const path = kind==="week" ? "/api/employees/"+id+"/worked-hours/week" : "/api/employees/"+id+"/worked-hours";
+      const h = await api(path);
+      $("repHours").textContent = h.totalWorkedHours.toFixed(1)+" h";
+      let meta = (kind==="week"?"Semana actual":"Histórico total")+" · neto de breaks";
+      if(h.overtimeMinutes>0) meta+=" · "+h.overtimeHours.toFixed(1)+" h extra";
+      $("repMeta").textContent=meta; $("repResult").style.display="block";
+    } catch(err){ handle(err,$("repMsg")); $("repResult").style.display="none"; }
+  }
+
+  // Helpers
+  async function safe(path){ // para endpoints que dan 404 cuando no hay datos
+    try { return await api(path); } catch(err){ if(err.status===404) return []; if(err.status===401) showLogin(); return []; }
+  }
+  function fmt(iso){ return iso ? new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) : ""; }
+  function handle(err, el){
+    if(err.status===401){ showLogin(); return; }
+    if(err.status===403){ flash(el,"No tenés permisos. ¿Entraste con la cuenta de admin?","error"); return; }
+    flash(el, err.message, "error");
+  }
+
+  function showLogin(){ localStorage.removeItem(TOKEN_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
+  function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); }
+
+  if(token()) showPanel(); else showLogin();
+</script>
+</body>
+</html>

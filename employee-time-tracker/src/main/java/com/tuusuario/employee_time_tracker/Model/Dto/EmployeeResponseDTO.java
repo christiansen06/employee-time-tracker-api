@@ -12,4 +12,5 @@ public class EmployeeResponseDTO {
     String email;
     String position;
     Boolean active;
+    boolean hasPin;
 }

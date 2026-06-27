@@ -178,6 +178,7 @@ public class EmployeeService {
                 .email(employee.getEmail())
                 .position(employee.getPosition())
                 .active(employee.getActive())
+                .hasPin(employee.getPinHash() != null)
                 .build();
     }
 
