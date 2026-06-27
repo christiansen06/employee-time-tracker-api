@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BuBa · Fichaje</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #f1f5f9;
+      --green: #22c55e; --amber: #f59e0b; --red: #ef4444; --blue: #3b82f6; --border: #334155;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .app {
+      width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.4);
+    }
+    .brand { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    h1 { margin: 0; font-size: 26px; letter-spacing: 1px; }
+    .subtitle { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+    .clock { font-size: 13px; color: var(--muted); }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+    input {
+      width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border);
+      background: #0b1220; color: var(--text); font-size: 16px;
+    }
+    button {
+      border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer;
+      color: #fff; transition: opacity .15s, transform .05s; padding: 16px;
+    }
+    button:active { transform: scale(.97); }
+    button:disabled { opacity: .3; cursor: not-allowed; }
+    .btn-primary { background: var(--blue); width: 100%; margin-top: 18px; }
+    .btn-green { background: var(--green); }
+    .btn-amber { background: var(--amber); }
+    .btn-red { background: var(--red); }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+    /* Grilla de empleados */
+    .emp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+    .emp-card {
+      background: #0b1220; border: 1px solid var(--border); border-radius: 16px;
+      padding: 18px 14px; cursor: pointer; text-align: left; display: flex;
+      flex-direction: column; gap: 10px; min-height: 92px;
+    }
+    .emp-card:active { transform: scale(.98); }
+    .emp-name { font-size: 17px; font-weight: 600; }
+    .badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; align-self: flex-start; }
+    .badge.NO_SHIFT  { background: rgba(148,163,184,.18); color: var(--muted); }
+    .badge.CLOCKED_IN{ background: rgba(34,197,94,.18); color: #86efac; }
+    .badge.ON_BREAK  { background: rgba(245,158,11,.18); color: #fcd34d; }
+    .no-pin { font-size: 11px; color: var(--amber); }
+
+    /* PIN pad */
+    .pin-dots { display: flex; gap: 12px; justify-content: center; margin: 18px 0; height: 18px; }
+    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); }
+    .pin-dot.on { background: var(--blue); border-color: var(--blue); }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .keypad button { background: #0b1220; border: 1px solid var(--border); color: var(--text); font-size: 24px; padding: 20px; }
+
+    .status {
+      text-align: center; padding: 14px; border-radius: 12px; margin: 10px 0 4px;
+      font-weight: 600; background: #0b1220; border: 1px solid var(--border);
+    }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+    .meta { color: var(--muted); font-size: 13px; text-align: center; margin-top: 6px; min-height: 18px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .grid2 button { width: 100%; }
+    .msg { margin-top: 14px; padding: 12px; border-radius: 10px; font-size: 14px; text-align: center; display: none; }
+    .msg.error { background: rgba(239,68,68,.15); color: #fca5a5; border: 1px solid rgba(239,68,68,.4); }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .topbar button { padding: 8px 12px; font-size: 13px; }
+    .hidden { display: none; }
+    .confirm { text-align: center; padding: 30px 10px; }
+    .confirm .check { font-size: 64px; }
+    .confirm .who { font-size: 20px; font-weight: 700; margin-top: 8px; }
+    .confirm .what { color: var(--muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- SETUP DEL DISPOSITIVO -->
+    <section id="setupView">
+      <div class="brand"><h1>BuBa</h1></div>
+      <p class="subtitle">Configurar este dispositivo (una sola vez)</p>
+      <form id="setupForm">
+        <label for="kUser">Usuario del kiosco</label>
+        <input id="kUser" autocomplete="off" value="kiosk" required>
+        <label for="kPass">Contraseña</label>
+        <input id="kPass" type="password" autocomplete="off" required>
+        <button type="submit" class="btn-primary" id="setupBtn">Activar dispositivo</button>
+      </form>
+      <div id="setupMsg" class="msg error"></div>
+    </section>
+
+    <!-- GRILLA DE EMPLEADOS -->
+    <section id="gridView" class="hidden">
+      <div class="topbar">
+        <div class="brand"><h1 style="font-size:22px;">BuBa</h1><span class="clock" id="clock"></span></div>
+        <button class="btn-ghost" id="resetDeviceBtn">Dispositivo</button>
+      </div>
+      <p class="subtitle">Tocá tu nombre para fichar</p>
+      <div class="emp-grid" id="empGrid"></div>
+      <div id="gridMsg" class="msg error"></div>
+    </section>
+
+    <!-- PIN -->
+    <section id="pinView" class="hidden">
+      <div class="topbar">
+        <button class="btn-ghost" id="pinBackBtn">← Volver</button>
+        <span class="clock" id="pinWho"></span>
+      </div>
+      <p class="subtitle">Ingresá tu PIN</p>
+      <div class="pin-dots" id="pinDots"></div>
+      <div class="keypad" id="keypad"></div>
+      <div id="pinMsg" class="msg error"></div>
+    </section>
+
+    <!-- ACCIONES -->
+    <section id="actionView" class="hidden">
+      <div class="topbar">
+        <button class="btn-ghost" id="actBackBtn">← Volver</button>
+        <span class="clock" id="actWho"></span>
+      </div>
+      <div class="status"><span class="dot" id="actDot"></span><span id="actState">–</span></div>
+      <div class="meta" id="actMeta"></div>
+      <div class="grid2">
+        <button class="btn-green" id="aClockIn">Entrada</button>
+        <button class="btn-red"   id="aClockOut">Salida</button>
+        <button class="btn-amber" id="aBreakIn">Iniciar break</button>
+        <button class="btn-amber" id="aBreakOut">Terminar break</button>
+      </div>
+      <div id="actMsg" class="msg error"></div>
+    </section>
+
+    <!-- CONFIRMACION -->
+    <section id="confirmView" class="hidden">
+      <div class="confirm">
+        <div class="check">✅</div>
+        <div class="who" id="confirmWho"></div>
+        <div class="what" id="confirmWhat"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    const TOKEN_KEY = "buba_kiosk_token";
+    const $ = (id) => document.getElementById(id);
+    const token = () => localStorage.getItem(TOKEN_KEY);
+
+    let current = { id: null, name: null, pin: "" };
+
+    async function api(path, method = "GET", body = null) {
+      const opts = { method, headers: { "Authorization": "Bearer " + token() } };
+      if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+      const res = await fetch(path, opts);
+      let data = null; try { data = await res.json(); } catch (_) {}
+      if (!res.ok) throw { status: res.status, message: (data && data.message) || ("Error " + res.status) };
+      return data;
+    }
+
+    // ---------- SETUP ----------
+    $("setupForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("setupMsg").style.display = "none"; $("setupBtn").disabled = true;
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: $("kUser").value, password: $("kPass").value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw { message: data.message || "Credenciales inválidas" };
+        localStorage.setItem(TOKEN_KEY, data.token);
+        showGrid();
+      } catch (err) {
+        $("setupMsg").textContent = err.message; $("setupMsg").style.display = "block";
+      } finally { $("setupBtn").disabled = false; }
+    });
+
+    $("resetDeviceBtn").addEventListener("click", () => {
+      if (confirm("¿Desconfigurar este dispositivo? Vas a tener que volver a activarlo.")) {
+        localStorage.removeItem(TOKEN_KEY); showSetup();
+      }
+    });
+
+    // ---------- GRILLA ----------
+    const STATES = {
+      NO_SHIFT:   { text: "Fuera",      color: "var(--muted)" },
+      CLOCKED_IN: { text: "Trabajando", color: "var(--green)" },
+      ON_BREAK:   { text: "En break",   color: "var(--amber)" }
+    };
+
+    async function loadGrid() {
+      try {
+        const emps = await api("/api/kiosk/employees");
+        const grid = $("empGrid"); grid.innerHTML = "";
+        if (!emps.length) { grid.innerHTML = '<p class="subtitle">No hay empleados activos. Creálos desde el panel de admin.</p>'; return; }
+        emps.forEach(e => {
+          const card = document.createElement("div");
+          card.className = "emp-card";
+          const st = STATES[e.state] || STATES.NO_SHIFT;
+          card.innerHTML =
+            '<div class="emp-name">' + e.fullName + '</div>' +
+            '<span class="badge ' + e.state + '">' + st.text + '</span>' +
+            (e.hasPin ? '' : '<span class="no-pin">⚠ sin PIN</span>');
+          card.addEventListener("click", () => openPin(e));
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        if (err.status === 401) { showSetup(); return; }
+        $("gridMsg").textContent = err.message; $("gridMsg").style.display = "block";
+      }
+    }
+
+    // ---------- PIN ----------
+    function buildKeypad() {
+      const kp = $("keypad"); kp.innerHTML = "";
+      ["1","2","3","4","5","6","7","8","9","C","0","⌫"].forEach(k => {
+        const b = document.createElement("button"); b.textContent = k;
+        b.addEventListener("click", () => pressKey(k));
+        kp.appendChild(b);
+      });
+    }
+    function renderDots() {
+      const d = $("pinDots"); d.innerHTML = "";
+      const len = Math.max(4, current.pin.length);
+      for (let i = 0; i < len; i++) {
+        const dot = document.createElement("div");
+        dot.className = "pin-dot" + (i < current.pin.length ? " on" : "");
+        d.appendChild(dot);
+      }
+    }
+    function pressKey(k) {
+      $("pinMsg").style.display = "none";
+      if (k === "C") current.pin = "";
+      else if (k === "⌫") current.pin = current.pin.slice(0, -1);
+      else if (current.pin.length < 6) current.pin += k;
+      renderDots();
+      if (current.pin.length >= 4 && /^\d{4,6}$/.test(current.pin)) {
+        // auto-confirma al llegar a 4; si falla, puede seguir tipeando
+        if (current.pin.length === 4) verifyPin();
+      }
+    }
+    function openPin(emp) {
+      current = { id: emp.id, name: emp.fullName, pin: "" };
+      $("pinWho").textContent = emp.fullName;
+      renderDots(); $("pinMsg").style.display = "none";
+      show("pinView");
+    }
+    async function verifyPin() {
+      try {
+        const status = await api("/api/kiosk/verify", "POST", { employeeId: current.id, pin: current.pin });
+        openActions(status);
+      } catch (err) {
+        current.pin = ""; renderDots();
+        $("pinMsg").textContent = err.status === 401 ? "PIN incorrecto" : err.message;
+        $("pinMsg").style.display = "block";
+      }
+    }
+
+    // ---------- ACCIONES ----------
+    function fmtTime(iso) {
+      if (!iso) return "";
+      return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    }
+    function openActions(status) {
+      $("actWho").textContent = current.name;
+      renderActionState(status);
+      $("actMsg").style.display = "none";
+      show("actionView");
+    }
+    function renderActionState(s) {
+      const st = STATES[s.state] || STATES.NO_SHIFT;
+      $("actState").textContent = st.text;
+      $("actDot").style.background = st.color;
+      let meta = "";
+      if (s.state === "CLOCKED_IN") meta = "Entrada: " + fmtTime(s.clockIn);
+      if (s.state === "ON_BREAK")   meta = "Break desde: " + fmtTime(s.breakStart);
+      $("actMeta").textContent = meta;
+      $("aClockIn").disabled  = s.state !== "NO_SHIFT";
+      $("aClockOut").disabled = s.state !== "CLOCKED_IN";
+      $("aBreakIn").disabled  = s.state !== "CLOCKED_IN";
+      $("aBreakOut").disabled = s.state !== "ON_BREAK";
+    }
+    function bindAction(btnId, path, label) {
+      $(btnId).addEventListener("click", async () => {
+        $("actMsg").style.display = "none";
+        try {
+          await api(path, "POST", { employeeId: current.id, pin: current.pin });
+          confirmAndBack(label);
+        } catch (err) {
+          $("actMsg").textContent = err.message; $("actMsg").style.display = "block";
+          if (err.status === 401) showSetup();
+        }
+      });
+    }
+    bindAction("aClockIn",  "/api/kiosk/clock-in",   "Entrada registrada");
+    bindAction("aClockOut", "/api/kiosk/clock-out",  "Salida registrada");
+    bindAction("aBreakIn",  "/api/kiosk/break/start","Break iniciado");
+    bindAction("aBreakOut", "/api/kiosk/break/end",  "Break terminado");
+
+    function confirmAndBack(label) {
+      $("confirmWho").textContent = current.name;
+      $("confirmWhat").textContent = label;
+      show("confirmView");
+      setTimeout(() => { current = { id:null, name:null, pin:"" }; showGrid(); }, 1800);
+    }
+
+    $("pinBackBtn").addEventListener("click", showGrid);
+    $("actBackBtn").addEventListener("click", showGrid);
+
+    // ---------- VISTAS ----------
+    const VIEWS = ["setupView","gridView","pinView","actionView","confirmView"];
+    function show(view) { VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view)); }
+    function showSetup() { localStorage.removeItem(TOKEN_KEY); show("setupView"); }
+    function showGrid() { current = { id:null, name:null, pin:"" }; $("gridMsg").style.display="none"; show("gridView"); loadGrid(); }
+
+    // Reloj
+    function tick() {
+      const now = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+      $("clock").textContent = now;
+    }
+    setInterval(tick, 1000); tick();
+
+    // Init
+    buildKeypad();
+    if (token()) showGrid(); else showSetup();
+  </script>
+</body>
+</html>

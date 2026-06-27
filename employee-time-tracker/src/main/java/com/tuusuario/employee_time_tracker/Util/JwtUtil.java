@@ -17,6 +17,9 @@ public class JwtUtil {
     @Value("${jwt.secret}")
     private String secretKey;
 
+    @Value("${jwt.expiration-ms:3600000}")
+    private long expirationMs;
+
     private Key key;
 
     @PostConstruct
@@ -24,13 +27,21 @@ public class JwtUtil {
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes());
     }
 
+    public long getDefaultExpirationMs() {
+        return expirationMs;
+    }
+
     public String generateToken(String username) {
+        return generateToken(username, expirationMs);
+    }
+
+    public String generateToken(String username, long ttlMs) {
 
         return Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(new Date())
                 .setExpiration(
-                        new Date(System.currentTimeMillis() + 1000 * 60 * 60)
+                        new Date(System.currentTimeMillis() + ttlMs)
                 )
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();

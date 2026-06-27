@@ -10,6 +10,7 @@ import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -22,6 +23,29 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EmployeeService {
     private final EmployeeRepository employeeRepository;
+    private final CurrentEmployeeService currentEmployeeService;
+    private final PasswordEncoder passwordEncoder;
+
+    /** Asigna (o reemplaza) el PIN de fichaje del empleado, hasheado. */
+    public void setPin(Long id, String rawPin) {
+        Employee employee = getEmployeeEntity(id);
+        employee.setPinHash(passwordEncoder.encode(rawPin));
+        employeeRepository.save(employee);
+    }
+
+    // ----- Horas del usuario autenticado (para los botones "/me") -----
+
+    /** Horas trabajadas (netas de breaks) en la semana actual, del usuario logueado. */
+    public WorkedHoursResponseDTO getWeeklyWorkedHoursForCurrentUser(String username) {
+        Employee employee = currentEmployeeService.getByUsername(username);
+        return getWeeklyWorkedHours(employee.getId());
+    }
+
+    /** Horas trabajadas (netas de breaks) histórico total, del usuario logueado. */
+    public WorkedHoursResponseDTO getWorkedHoursForCurrentUser(String username) {
+        Employee employee = currentEmployeeService.getByUsername(username);
+        return getWorkedHours(employee.getId());
+    }
 
     //CREATE
     public EmployeeResponseDTO createEmployee(EmployeeRequestDTO request) {

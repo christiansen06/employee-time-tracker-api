@@ -32,6 +32,10 @@ public class Employee {
     @Column(nullable = false)
     private Boolean active;
 
+    /** PIN de fichaje en el kiosco, hasheado con BCrypt. Null hasta que el admin lo asigna. */
+    @Column(name = "pin_hash")
+    private String pinHash;
+
     @OneToMany(mappedBy = "employee")
     @JsonManagedReference
     private List<TimeEntry> timeEntries;

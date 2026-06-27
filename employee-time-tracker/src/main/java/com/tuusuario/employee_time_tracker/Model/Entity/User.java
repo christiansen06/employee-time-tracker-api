@@ -22,6 +22,17 @@ public class User {
     @Column(nullable = false)
     private String password;
 
+    // VARCHAR en vez de ENUM de MySQL: permite agregar roles nuevos (ej. KIOSK)
+    // sin tener que recrear la columna.
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "varchar(20)")
     private Role role;
+
+    /**
+     * Empleado vinculado a esta cuenta de login.
+     * Para usuarios EMPLOYEE apunta a su ficha; para ADMIN puede ser null.
+     */
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "employee_id", unique = true)
+    private Employee employee;
 }

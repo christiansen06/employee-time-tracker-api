@@ -1,9 +1,14 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
-import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
+import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
+import com.tuusuario.employee_time_tracker.Service.EmployeeService;
 import com.tuusuario.employee_time_tracker.Service.TimeEntryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -12,14 +17,55 @@ import org.springframework.web.bind.annotation.*;
 public class TimeEntryController {
 
     private final TimeEntryService timeEntryService;
+    private final EmployeeService employeeService;
+
+    // ---------- ADMIN: fichar a cualquier empleado por id ----------
 
     @PostMapping("/clock-in/{employeeId}")
-    public ResponseEntity<TimeEntry> clockIn(@PathVariable Long employeeId) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<TimeEntrySummaryDTO> clockIn(@PathVariable Long employeeId) {
         return ResponseEntity.ok(timeEntryService.clockIn(employeeId));
     }
 
     @PostMapping("/clock-out/{timeEntryId}")
-    public ResponseEntity<TimeEntry> clockOut(@PathVariable Long timeEntryId) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<TimeEntrySummaryDTO> clockOut(@PathVariable Long timeEntryId) {
         return ResponseEntity.ok(timeEntryService.clockOut(timeEntryId));
+    }
+
+    // ---------- SELF: estado actual del empleado autenticado ----------
+
+    /** Estado actual (sin jornada / fichado / en break) para habilitar botones. */
+    @GetMapping("/me/current")
+    public ResponseEntity<CurrentStatusDTO> myCurrentStatus(Authentication authentication) {
+        return ResponseEntity.ok(timeEntryService.getCurrentStatus(authentication.getName()));
+    }
+
+    // ---------- SELF: el empleado autenticado ficha su propia jornada ----------
+
+    @PostMapping("/me/clock-in")
+    public ResponseEntity<TimeEntrySummaryDTO> clockInMe(Authentication authentication) {
+        return ResponseEntity.ok(timeEntryService.clockInCurrent(authentication.getName()));
+    }
+
+    @PostMapping("/me/clock-out")
+    public ResponseEntity<TimeEntrySummaryDTO> clockOutMe(Authentication authentication) {
+        return ResponseEntity.ok(timeEntryService.clockOutCurrent(authentication.getName()));
+    }
+
+    // ---------- SELF: horas trabajadas del empleado autenticado ----------
+
+    /** Botón "mis horas de esta semana" (netas de breaks). */
+    @GetMapping("/me/worked-hours/week")
+    public ResponseEntity<WorkedHoursResponseDTO> myWeeklyWorkedHours(Authentication authentication) {
+        return ResponseEntity.ok(
+                employeeService.getWeeklyWorkedHoursForCurrentUser(authentication.getName()));
+    }
+
+    /** Horas trabajadas históricas totales del empleado autenticado. */
+    @GetMapping("/me/worked-hours")
+    public ResponseEntity<WorkedHoursResponseDTO> myWorkedHours(Authentication authentication) {
+        return ResponseEntity.ok(
+                employeeService.getWorkedHoursForCurrentUser(authentication.getName()));
     }
 }

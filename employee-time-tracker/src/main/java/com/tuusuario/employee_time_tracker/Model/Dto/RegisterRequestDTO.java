@@ -16,4 +16,10 @@ public class RegisterRequestDTO {
 
     @NotNull(message = "Role is required")
     private Role role;
+
+    /**
+     * Ficha de empleado a vincular con esta cuenta.
+     * Obligatorio cuando role = EMPLOYEE; opcional (null) para ADMIN.
+     */
+    private Long employeeId;
 }

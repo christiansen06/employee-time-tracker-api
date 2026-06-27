@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Controller;
 
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.SetPinRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
 import com.tuusuario.employee_time_tracker.Service.EmployeeService;
 import jakarta.validation.Valid;
@@ -58,6 +59,15 @@ public class EmployeeController {
     @PatchMapping("/{id}/activate")
     public ResponseEntity<EmployeeResponseDTO> activateEmployee(@PathVariable Long id) {
         return ResponseEntity.ok(employeeService.activateEmployee(id));
+    }
+
+    //SET / RESET PIN de fichaje (kiosco)
+    @PutMapping("/{id}/pin")
+    public ResponseEntity<Void> setPin(
+            @PathVariable Long id,
+            @Valid @RequestBody SetPinRequestDTO dto) {
+        employeeService.setPin(id, dto.getPin());
+        return ResponseEntity.noContent().build();
     }
 
     //Total Historico

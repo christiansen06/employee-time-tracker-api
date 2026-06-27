@@ -2,12 +2,13 @@ package com.tuusuario.employee_time_tracker.Security;
 
 import com.tuusuario.employee_time_tracker.Service.CustomUserDetailsService;
 import com.tuusuario.employee_time_tracker.Util.JwtUtil;
-import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,6 +22,8 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService customUserDetailsService;
 
@@ -29,7 +32,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getServletPath();
 
-        return path.startsWith("/api/auth");
+        // Solo el login es publico. /api/auth/register requiere token de ADMIN,
+        // por lo que NO debe saltearse el filtro.
+        return path.equals("/api/auth/login");
     }
 
     @Override
@@ -79,7 +84,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         } catch (Exception e) {
 
-            System.out.println("JWT ERROR -> " + e.getMessage());
+            log.warn("No se pudo autenticar el token JWT: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
