@@ -77,6 +77,29 @@ public class TimeEntryService {
         return buildStatus(loadEmployee(employeeId)).getState();
     }
 
+    // ---------- ADMIN: correccion manual de jornadas ----------
+
+    public TimeEntrySummaryDTO updateEntry(Long timeEntryId,
+                                           LocalDateTime clockIn,
+                                           LocalDateTime clockOut) {
+
+        TimeEntry timeEntry = timeEntryRepository.findById(timeEntryId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Time entry not found with id: " + timeEntryId));
+
+        if (!clockOut.isAfter(clockIn)) {
+            throw new IllegalArgumentException(
+                    "clockOut must be after clockIn.");
+        }
+
+        // Una jornada corregida queda siempre cerrada.
+        timeEntry.setClockIn(clockIn);
+        timeEntry.setClockOut(clockOut);
+        timeEntry.setStatus(TimeEntryStatus.FINISHED);
+
+        return mapToDTO(timeEntryRepository.save(timeEntry));
+    }
+
     // ---------- Estado actual (para el frontend) ----------
 
     private TimeEntrySummaryDTO clockOutForEmployee(Employee employee) {

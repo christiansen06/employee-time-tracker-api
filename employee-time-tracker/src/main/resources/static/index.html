@@ -135,6 +135,11 @@
         <button class="btn-amber" id="aBreakIn">Iniciar break</button>
         <button class="btn-amber" id="aBreakOut">Terminar break</button>
       </div>
+      <button class="btn-ghost" style="width:100%;margin-top:14px;" id="aHours">Mis horas de esta semana</button>
+      <div id="aHoursBox" style="display:none;text-align:center;margin-top:12px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--border);">
+        <div style="font-size:28px;font-weight:700;" id="aHoursValue">–</div>
+        <div class="meta" id="aHoursMeta"></div>
+      </div>
       <div id="actMsg" class="msg error"></div>
     </section>
 
@@ -221,8 +226,9 @@
     // ---------- PIN ----------
     function buildKeypad() {
       const kp = $("keypad"); kp.innerHTML = "";
-      ["1","2","3","4","5","6","7","8","9","C","0","⌫"].forEach(k => {
+      ["1","2","3","4","5","6","7","8","9","⌫","0","✓"].forEach(k => {
         const b = document.createElement("button"); b.textContent = k;
+        if (k === "✓") { b.style.background = "var(--green)"; b.style.borderColor = "var(--green)"; }
         b.addEventListener("click", () => pressKey(k));
         kp.appendChild(b);
       });
@@ -238,14 +244,15 @@
     }
     function pressKey(k) {
       $("pinMsg").style.display = "none";
-      if (k === "C") current.pin = "";
-      else if (k === "⌫") current.pin = current.pin.slice(0, -1);
+      if (k === "✓") {
+        // Confirmacion explicita: soporta PINs de 4 a 6 digitos.
+        if (/^\d{4,6}$/.test(current.pin)) verifyPin();
+        else { $("pinMsg").textContent = "El PIN es de 4 a 6 dígitos"; $("pinMsg").style.display = "block"; }
+        return;
+      }
+      if (k === "⌫") current.pin = current.pin.slice(0, -1);
       else if (current.pin.length < 6) current.pin += k;
       renderDots();
-      if (current.pin.length >= 4 && /^\d{4,6}$/.test(current.pin)) {
-        // auto-confirma al llegar a 4; si falla, puede seguir tipeando
-        if (current.pin.length === 4) verifyPin();
-      }
     }
     function openPin(emp) {
       current = { id: emp.id, name: emp.fullName, pin: "" };
@@ -273,6 +280,7 @@
       $("actWho").textContent = current.name;
       renderActionState(status);
       $("actMsg").style.display = "none";
+      $("aHoursBox").style.display = "none";
       show("actionView");
     }
     function renderActionState(s) {
@@ -304,6 +312,19 @@
     bindAction("aClockOut", "/api/kiosk/clock-out",  "Salida registrada");
     bindAction("aBreakIn",  "/api/kiosk/break/start","Break iniciado");
     bindAction("aBreakOut", "/api/kiosk/break/end",  "Break terminado");
+
+    $("aHours").addEventListener("click", async () => {
+      $("actMsg").style.display = "none";
+      try {
+        const h = await api("/api/kiosk/worked-hours", "POST", { employeeId: current.id, pin: current.pin });
+        $("aHoursValue").textContent = h.totalWorkedHours.toFixed(1) + " h";
+        $("aHoursMeta").textContent = "Semana actual · neto de breaks";
+        $("aHoursBox").style.display = "block";
+      } catch (err) {
+        $("actMsg").textContent = err.message; $("actMsg").style.display = "block";
+        if (err.status === 401) showSetup();
+      }
+    });
 
     function confirmAndBack(label) {
       $("confirmWho").textContent = current.name;

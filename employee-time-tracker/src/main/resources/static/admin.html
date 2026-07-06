@@ -129,12 +129,24 @@
         <div class="row" style="margin-top:12px;">
           <button class="btn-primary" id="repWeek">Esta semana</button>
           <button class="btn-ghost" id="repTotal">Histórico total</button>
+          <button class="btn-amber" id="repEntries">Ver jornadas</button>
         </div>
         <div id="repResult" style="margin-top:16px;text-align:center;display:none;">
           <div class="hours-big" id="repHours">–</div>
           <div class="muted" id="repMeta"></div>
         </div>
         <div id="repMsg" class="msg"></div>
+      </div>
+
+      <div class="card" id="entriesCard" style="display:none;">
+        <h3 style="margin-top:0;">Jornadas <span class="muted" style="font-size:13px;">(editá entrada/salida y guardá)</span></h3>
+        <div style="overflow-x:auto;">
+          <table id="entriesTable">
+            <thead><tr><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="entriesMsg" class="msg"></div>
       </div>
     </div>
   </section>
@@ -276,6 +288,44 @@
       if(h.overtimeMinutes>0) meta+=" · "+h.overtimeHours.toFixed(1)+" h extra";
       $("repMeta").textContent=meta; $("repResult").style.display="block";
     } catch(err){ handle(err,$("repMsg")); $("repResult").style.display="none"; }
+  }
+
+  // JORNADAS (edicion)
+  $("repEntries").addEventListener("click", loadEntries);
+  async function loadEntries(){
+    flash($("repMsg"),""); flash($("entriesMsg"),"");
+    const id=$("repEmp").value;
+    if(!id){ flash($("repMsg"),"Elegí un empleado.","error"); return; }
+    const tb = $("entriesTable").querySelector("tbody"); tb.innerHTML="";
+    $("entriesCard").style.display="block";
+    const entries = await safe("/api/analytics/employees/"+id+"/entries");
+    if(!entries.length){ tb.innerHTML='<tr><td colspan="4" class="muted">Este empleado no tiene jornadas registradas.</td></tr>'; return; }
+    entries.sort((a,b)=> (b.clockIn||"").localeCompare(a.clockIn||""));
+    entries.forEach(e=>{
+      const tr=document.createElement("tr");
+      const inVal = e.clockIn ? e.clockIn.substring(0,16) : "";
+      const outVal = e.clockOut ? e.clockOut.substring(0,16) : "";
+      const abierta = e.status !== "FINISHED";
+      const badge = abierta ? '<span class="badge warn">Abierta</span>' : '<span class="badge on">Cerrada</span>';
+      tr.innerHTML =
+        '<td><input type="datetime-local" value="'+inVal+'" id="in-'+e.timeEntryId+'"></td>'+
+        '<td><input type="datetime-local" value="'+outVal+'" id="out-'+e.timeEntryId+'"></td>'+
+        '<td>'+badge+'</td>'+
+        '<td><button class="btn-green" data-save="'+e.timeEntryId+'">Guardar</button></td>';
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll("button[data-save]").forEach(b=>b.addEventListener("click",()=>saveEntry(b.dataset.save)));
+  }
+
+  async function saveEntry(id){
+    flash($("entriesMsg"),"");
+    const clockIn = $("in-"+id).value, clockOut = $("out-"+id).value;
+    if(!clockIn || !clockOut){ flash($("entriesMsg"),"Completá entrada y salida (la jornada editada queda cerrada).","error"); return; }
+    try {
+      await api("/api/time-entries/"+id,"PUT",{clockIn, clockOut});
+      flash($("entriesMsg"),"Jornada actualizada.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
   }
 
   // Helpers
