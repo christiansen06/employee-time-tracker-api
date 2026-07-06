@@ -92,10 +92,12 @@ public class TimeEntryService {
                     "clockOut must be after clockIn.");
         }
 
-        // Una jornada corregida queda siempre cerrada.
+        // Una jornada corregida queda siempre cerrada y deja de estar
+        // marcada como auto-cerrada (el admin ya la reviso).
         timeEntry.setClockIn(clockIn);
         timeEntry.setClockOut(clockOut);
         timeEntry.setStatus(TimeEntryStatus.FINISHED);
+        timeEntry.setAutoClosed(false);
 
         return mapToDTO(timeEntryRepository.save(timeEntry));
     }
@@ -209,6 +211,7 @@ public class TimeEntryService {
                 .clockIn(timeEntry.getClockIn())
                 .clockOut(timeEntry.getClockOut())
                 .status(timeEntry.getStatus())
+                .autoClosed(timeEntry.getAutoClosed())
                 .build();
     }
 }

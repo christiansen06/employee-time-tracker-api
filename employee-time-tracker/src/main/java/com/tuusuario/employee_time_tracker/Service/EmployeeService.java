@@ -172,12 +172,20 @@ public class EmployeeService {
      * neto de breaks. Para la tarjeta semanal del kiosco.
      */
     public WeeklyHoursDetailDTO getWeeklyDetail(Long employeeId) {
+        return getWeeklyDetail(employeeId, LocalDate.now());
+    }
+
+    /**
+     * Desglose dia a dia de la semana que contiene la fecha ancla.
+     * Permite consultar semanas pasadas (liquidacion).
+     */
+    public WeeklyHoursDetailDTO getWeeklyDetail(Long employeeId, LocalDate anchor) {
 
         Employee employee = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Employee not found with id: " + employeeId));
 
-        LocalDate weekStart = LocalDate.now().with(DayOfWeek.MONDAY);
+        LocalDate weekStart = anchor.with(DayOfWeek.MONDAY);
         LocalDateTime from = weekStart.atStartOfDay();
         LocalDateTime to = weekStart.plusDays(7).atStartOfDay();
 

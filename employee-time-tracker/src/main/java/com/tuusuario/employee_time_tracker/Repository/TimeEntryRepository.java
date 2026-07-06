@@ -21,4 +21,7 @@ public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
 
     Optional<TimeEntry> findFirstByEmployeeIdAndStatusOrderByClockInDesc(
             Long employeeId, TimeEntryStatus status);
+
+    List<TimeEntry> findByStatusInAndClockInBefore(
+            Collection<TimeEntryStatus> statuses, LocalDateTime before);
 }

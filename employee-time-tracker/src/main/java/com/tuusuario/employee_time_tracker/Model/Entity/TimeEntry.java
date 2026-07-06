@@ -27,6 +27,10 @@ public class TimeEntry {
     @Enumerated(EnumType.STRING)
     private TimeEntryStatus status;
 
+    /** true si la cerro el job automatico (jornada olvidada); el admin debe corregirla. */
+    @Column(name = "auto_closed")
+    private Boolean autoClosed;
+
     @ManyToOne
     @JoinColumn(name = "employee_id")
     @JsonBackReference

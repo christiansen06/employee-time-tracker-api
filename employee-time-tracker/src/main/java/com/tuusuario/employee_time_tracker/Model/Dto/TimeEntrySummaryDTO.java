@@ -15,4 +15,5 @@ public class TimeEntrySummaryDTO {
     private LocalDateTime clockIn;
     private LocalDateTime clockOut;
     private TimeEntryStatus status;
+    private Boolean autoClosed;
 }

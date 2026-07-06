@@ -127,11 +127,27 @@
     <!-- REPORTES -->
     <div id="tab-reportes" class="hidden">
       <div class="card">
-        <h3 style="margin-top:0;">Horas trabajadas</h3>
+        <h3 style="margin-top:0;">Cuadro semanal <span class="muted" style="font-size:13px;">(todos los empleados)</span></h3>
+        <label>Elegí cualquier día de la semana que querés ver</label>
+        <input type="date" id="weekDate">
+        <div class="row" style="margin-top:12px;">
+          <button class="btn-primary" id="weekShow">Ver cuadro</button>
+          <button class="btn-green" id="weekCsv">⬇ Descargar CSV</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:14px;">
+          <table id="weekTable" style="display:none;">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="weekMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Por empleado</h3>
         <label>Empleado</label>
         <select id="repEmp"></select>
         <div class="row" style="margin-top:12px;">
-          <button class="btn-primary" id="repWeek">Esta semana</button>
           <button class="btn-ghost" id="repTotal">Histórico total</button>
           <button class="btn-amber" id="repEntries">Ver jornadas</button>
         </div>
@@ -279,20 +295,56 @@
       emps.forEach(e=>{ const o=document.createElement("option"); o.value=e.id; o.textContent=e.name+" "+e.lastName; sel.appendChild(o); });
     } catch(err){ handle(err,$("repMsg")); }
   }
-  $("repWeek").addEventListener("click", ()=>report("week"));
-  $("repTotal").addEventListener("click", ()=>report("total"));
-  async function report(kind){
+  $("repTotal").addEventListener("click", async ()=>{
     flash($("repMsg"),""); const id=$("repEmp").value;
     if(!id){ flash($("repMsg"),"Elegí un empleado.","error"); return; }
     try {
-      const path = kind==="week" ? "/api/employees/"+id+"/worked-hours/week" : "/api/employees/"+id+"/worked-hours";
-      const h = await api(path);
+      const h = await api("/api/employees/"+id+"/worked-hours");
       $("repHours").textContent = h.totalWorkedHours.toFixed(1)+" h";
-      let meta = (kind==="week"?"Semana actual":"Histórico total")+" · neto de breaks";
-      if(h.overtimeMinutes>0) meta+=" · "+h.overtimeHours.toFixed(1)+" h extra";
-      $("repMeta").textContent=meta; $("repResult").style.display="block";
+      $("repMeta").textContent = "Histórico total · neto de breaks";
+      $("repResult").style.display="block";
     } catch(err){ handle(err,$("repMsg")); $("repResult").style.display="none"; }
-  }
+  });
+
+  // CUADRO SEMANAL (todos los empleados)
+  const DAY_NAMES=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+  function fmtHM(m){ return Math.floor(m/60)+":"+String(m%60).padStart(2,"0"); }
+  $("weekDate").value = new Date().toISOString().substring(0,10);
+
+  $("weekShow").addEventListener("click", async ()=>{
+    flash($("weekMsg"),"");
+    try {
+      const rep = await api("/api/analytics/weekly-report?date="+$("weekDate").value);
+      const table=$("weekTable");
+      if(!rep.length){ table.style.display="none"; flash($("weekMsg"),"No hay empleados activos.","error"); return; }
+      let head='<tr><th>Empleado</th>';
+      rep[0].days.forEach((d,i)=>{ head+='<th>'+DAY_NAMES[i]+' '+d.date.substring(8,10)+'/'+d.date.substring(5,7)+'</th>'; });
+      head+='<th>Total</th></tr>';
+      table.querySelector("thead").innerHTML=head;
+      let body="";
+      rep.forEach(r=>{
+        body+='<tr><td>'+r.employeeName+'</td>';
+        r.days.forEach(d=>{ body+='<td>'+(d.workedMinutes>0?fmtHM(d.workedMinutes):'<span class="muted">–</span>')+'</td>'; });
+        body+='<td><strong>'+fmtHM(r.totalWorkedMinutes)+'</strong></td></tr>';
+      });
+      table.querySelector("tbody").innerHTML=body;
+      table.style.display="table";
+    } catch(err){ handle(err,$("weekMsg")); }
+  });
+
+  $("weekCsv").addEventListener("click", async ()=>{
+    flash($("weekMsg"),"");
+    try {
+      const res = await fetch("/api/analytics/weekly-report/csv?date="+$("weekDate").value,
+        { headers:{ "Authorization":"Bearer "+token() } });
+      if(!res.ok) throw { status:res.status, message:"No se pudo generar el CSV ("+res.status+")" };
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download="horas-semana-"+$("weekDate").value+".csv"; a.click();
+      URL.revokeObjectURL(url);
+    } catch(err){ handle(err,$("weekMsg")); }
+  });
 
   // JORNADAS (edicion)
   $("repEntries").addEventListener("click", loadEntries);
@@ -310,7 +362,8 @@
       const inVal = e.clockIn ? e.clockIn.substring(0,16) : "";
       const outVal = e.clockOut ? e.clockOut.substring(0,16) : "";
       const abierta = e.status !== "FINISHED";
-      const badge = abierta ? '<span class="badge warn">Abierta</span>' : '<span class="badge on">Cerrada</span>';
+      let badge = abierta ? '<span class="badge warn">Abierta</span>' : '<span class="badge on">Cerrada</span>';
+      if (e.autoClosed) badge = '<span class="badge warn" title="Cerrada automáticamente con 0 horas: corregí la salida real">⚠ Auto · corregir</span>';
       tr.innerHTML =
         '<td><input type="datetime-local" value="'+inVal+'" id="in-'+e.timeEntryId+'"></td>'+
         '<td><input type="datetime-local" value="'+outVal+'" id="out-'+e.timeEntryId+'"></td>'+

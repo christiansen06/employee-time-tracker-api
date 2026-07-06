@@ -4,8 +4,10 @@ import java.time.format.DateTimeParseException;
 import com.tuusuario.employee_time_tracker.Exception.NoDataFoundException;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.BreakSummaryDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.BreakEntry;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
@@ -17,7 +19,9 @@ import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
@@ -28,6 +32,7 @@ public class AnalyticsService {
     private final TimeEntryRepository timeEntryRepository;
     private final BreakEntryRepository breakEntryRepository;
     private final EmployeeRepository employeeRepository;
+    private final EmployeeService employeeService;
 
     public List<TimeEntrySummaryDTO> getActiveTimeEntries() {
         List<TimeEntry> activeEntries =
@@ -120,6 +125,51 @@ public class AnalyticsService {
         return entries.stream()
                 .map(this::mapToTimeEntrySummaryDTO)
                 .toList();
+    }
+
+    /**
+     * Cuadro semanal de TODOS los empleados activos para la semana
+     * que contiene la fecha ancla (o la actual si es null). Para liquidacion.
+     */
+    public List<WeeklyHoursDetailDTO> getWeeklyReport(LocalDate anchor) {
+        LocalDate effective = anchor != null ? anchor : LocalDate.now();
+
+        return employeeRepository.findByActiveTrue().stream()
+                .map(e -> employeeService.getWeeklyDetail(e.getId(), effective))
+                .toList();
+    }
+
+    /** El mismo cuadro semanal en CSV (compatible con Excel es-AR: separador ';'). */
+    public String buildWeeklyCsv(LocalDate anchor) {
+        List<WeeklyHoursDetailDTO> report = getWeeklyReport(anchor);
+        DateTimeFormatter df = DateTimeFormatter.ofPattern("dd/MM");
+        String[] dayNames = {"Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"};
+
+        // BOM para que Excel abra el archivo como UTF-8.
+        StringBuilder sb = new StringBuilder("﻿");
+
+        sb.append("Empleado");
+        if (!report.isEmpty()) {
+            List<DailyHoursDTO> days = report.get(0).getDays();
+            for (int i = 0; i < days.size(); i++) {
+                sb.append(";").append(dayNames[i]).append(" ").append(days.get(i).getDate().format(df));
+            }
+        }
+        sb.append(";Total\n");
+
+        for (WeeklyHoursDetailDTO row : report) {
+            sb.append(row.getEmployeeName());
+            for (DailyHoursDTO day : row.getDays()) {
+                sb.append(";").append(formatMinutes(day.getWorkedMinutes()));
+            }
+            sb.append(";").append(formatMinutes(row.getTotalWorkedMinutes())).append("\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String formatMinutes(long minutes) {
+        return minutes / 60 + ":" + String.format("%02d", minutes % 60);
     }
 
     private void validateEmployeeId(Long employeeId) {
