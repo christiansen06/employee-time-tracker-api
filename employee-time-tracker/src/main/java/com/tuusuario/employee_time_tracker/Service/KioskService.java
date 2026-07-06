@@ -3,7 +3,7 @@ package com.tuusuario.employee_time_tracker.Service;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.KioskEmployeeDTO;
-import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
@@ -69,10 +69,10 @@ public class KioskService {
         return timeEntryService.getStatusByEmployeeId(employeeId);
     }
 
-    /** Horas trabajadas de la semana actual, para que el empleado las consulte en el kiosco. */
-    public WorkedHoursResponseDTO weeklyWorkedHours(Long employeeId, String pin) {
+    /** Desglose dia a dia de la semana actual, para que el empleado lo consulte en el kiosco. */
+    public WeeklyHoursDetailDTO weeklyWorkedHours(Long employeeId, String pin) {
         verifyPin(employeeId, pin);
-        return employeeService.getWeeklyWorkedHours(employeeId);
+        return employeeService.getWeeklyDetail(employeeId);
     }
 
     private void verifyPin(Long employeeId, String pin) {

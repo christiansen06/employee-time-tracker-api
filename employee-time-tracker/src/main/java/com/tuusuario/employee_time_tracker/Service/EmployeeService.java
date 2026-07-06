@@ -1,8 +1,10 @@
 package com.tuusuario.employee_time_tracker.Service;
 
+import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
+import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.BreakEntry;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
@@ -17,7 +19,10 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -161,6 +166,64 @@ public class EmployeeService {
                 .build();
     }
 
+
+    /**
+     * Desglose dia a dia (lunes a domingo) de la semana actual,
+     * neto de breaks. Para la tarjeta semanal del kiosco.
+     */
+    public WeeklyHoursDetailDTO getWeeklyDetail(Long employeeId) {
+
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Employee not found with id: " + employeeId));
+
+        LocalDate weekStart = LocalDate.now().with(DayOfWeek.MONDAY);
+        LocalDateTime from = weekStart.atStartOfDay();
+        LocalDateTime to = weekStart.plusDays(7).atStartOfDay();
+
+        Map<LocalDate, Long> minutesPerDay = new HashMap<>();
+
+        if (employee.getTimeEntries() != null) {
+            employee.getTimeEntries().stream()
+                    .filter(e -> e.getStatus() == TimeEntryStatus.FINISHED)
+                    .filter(e -> e.getClockIn() != null && e.getClockOut() != null)
+                    .filter(e -> !e.getClockIn().isBefore(from) && e.getClockIn().isBefore(to))
+                    .forEach(e -> minutesPerDay.merge(
+                            e.getClockIn().toLocalDate(), entryNetMinutes(e), Long::sum));
+        }
+
+        List<DailyHoursDTO> days = new ArrayList<>();
+        long total = 0;
+        for (int i = 0; i < 7; i++) {
+            LocalDate day = weekStart.plusDays(i);
+            long minutes = minutesPerDay.getOrDefault(day, 0L);
+            total += minutes;
+            days.add(DailyHoursDTO.builder().date(day).workedMinutes(minutes).build());
+        }
+
+        return WeeklyHoursDetailDTO.builder()
+                .employeeId(employee.getId())
+                .employeeName(employee.getName() + " " + employee.getLastName())
+                .weekStart(weekStart)
+                .weekEnd(weekStart.plusDays(6))
+                .days(days)
+                .totalWorkedMinutes(total)
+                .totalWorkedHours(total / 60.0)
+                .build();
+    }
+
+    /** Minutos netos de una jornada: duracion menos breaks. */
+    private long entryNetMinutes(TimeEntry entry) {
+        long worked = Duration.between(entry.getClockIn(), entry.getClockOut()).toMinutes();
+        long breaks = 0;
+        if (entry.getBreaks() != null) {
+            breaks = entry.getBreaks().stream()
+                    .filter(b -> b.getDurationMinutes() != null)
+                    .mapToLong(BreakEntry::getDurationMinutes)
+                    .sum();
+        }
+        return worked - breaks;
+    }
 
     //Metodos Auxiliares
     //Buscar Empleado por id

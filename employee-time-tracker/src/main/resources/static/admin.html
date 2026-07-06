@@ -8,10 +8,14 @@
     :root {
       --bg:#0f172a; --card:#1e293b; --muted:#94a3b8; --text:#f1f5f9;
       --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --blue:#3b82f6; --border:#334155;
+      --turq:#23DFF1; --pink:#EE7AE0; /* colores de marca BuBa */
     }
     * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
     body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      background:var(--bg); color:var(--text); min-height:100vh; }
+      background:linear-gradient(135deg, var(--turq) 0%, var(--pink) 100%);
+      color:var(--text); min-height:100vh; }
+    h1 { background:linear-gradient(90deg, var(--turq), var(--pink));
+      -webkit-background-clip:text; background-clip:text; color:transparent; }
     .wrap { max-width:920px; margin:0 auto; padding:20px; }
     h1 { letter-spacing:1px; margin:0; }
     .muted { color:var(--muted); }
@@ -21,7 +25,7 @@
       color:#fff; padding:10px 14px; transition:opacity .15s, transform .05s; }
     button:active { transform:scale(.97); }
     button:disabled { opacity:.4; cursor:not-allowed; }
-    .btn-primary{background:var(--blue);} .btn-green{background:var(--green);}
+    .btn-primary{background:var(--turq);color:#06272b;} .btn-green{background:var(--green);}
     .btn-amber{background:var(--amber);} .btn-red{background:var(--red);}
     .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
     .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:18px; }
@@ -29,7 +33,7 @@
     .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
     .tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
     .tab { background:#0b1220; border:1px solid var(--border); color:var(--muted); }
-    .tab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
+    .tab.active { background:var(--turq); color:#06272b; border-color:var(--turq); }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); font-size:14px; }
     th { color:var(--muted); font-weight:600; }
@@ -311,10 +315,24 @@
         '<td><input type="datetime-local" value="'+inVal+'" id="in-'+e.timeEntryId+'"></td>'+
         '<td><input type="datetime-local" value="'+outVal+'" id="out-'+e.timeEntryId+'"></td>'+
         '<td>'+badge+'</td>'+
-        '<td><button class="btn-green" data-save="'+e.timeEntryId+'">Guardar</button></td>';
+        '<td><div class="row actions">'+
+          '<button class="btn-green" data-save="'+e.timeEntryId+'">Guardar</button>'+
+          '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'+
+        '</div></td>';
       tb.appendChild(tr);
     });
     tb.querySelectorAll("button[data-save]").forEach(b=>b.addEventListener("click",()=>saveEntry(b.dataset.save)));
+    tb.querySelectorAll("button[data-del]").forEach(b=>b.addEventListener("click",()=>deleteEntry(b.dataset.del)));
+  }
+
+  async function deleteEntry(id){
+    flash($("entriesMsg"),"");
+    if(!confirm("¿Eliminar esta jornada? Se borra definitivamente (incluye sus breaks).")) return;
+    try {
+      await api("/api/time-entries/"+id,"DELETE");
+      flash($("entriesMsg"),"Jornada eliminada.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
   }
 
   async function saveEntry(id){

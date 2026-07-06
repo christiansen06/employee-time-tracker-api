@@ -100,6 +100,20 @@ public class TimeEntryService {
         return mapToDTO(timeEntryRepository.save(timeEntry));
     }
 
+    /** Elimina una jornada (y sus breaks). Para borrar dias de prueba o errores. */
+    public void deleteEntry(Long timeEntryId) {
+
+        TimeEntry timeEntry = timeEntryRepository.findById(timeEntryId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Time entry not found with id: " + timeEntryId));
+
+        if (timeEntry.getBreaks() != null && !timeEntry.getBreaks().isEmpty()) {
+            breakEntryRepository.deleteAll(timeEntry.getBreaks());
+        }
+
+        timeEntryRepository.delete(timeEntry);
+    }
+
     // ---------- Estado actual (para el frontend) ----------
 
     private TimeEntrySummaryDTO clockOutForEmployee(Employee employee) {

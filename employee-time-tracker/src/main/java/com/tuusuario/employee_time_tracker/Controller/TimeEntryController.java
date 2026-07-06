@@ -35,6 +35,14 @@ public class TimeEntryController {
         return ResponseEntity.ok(timeEntryService.clockOut(timeEntryId));
     }
 
+    /** Eliminacion de una jornada (dias de prueba o registros erroneos). */
+    @DeleteMapping("/{timeEntryId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteEntry(@PathVariable Long timeEntryId) {
+        timeEntryService.deleteEntry(timeEntryId);
+        return ResponseEntity.noContent().build();
+    }
+
     /** Correccion manual de una jornada (horario de entrada y salida). */
     @PutMapping("/{timeEntryId}")
     @PreAuthorize("hasRole('ADMIN')")

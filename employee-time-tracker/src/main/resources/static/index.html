@@ -8,12 +8,18 @@
     :root {
       --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #f1f5f9;
       --green: #22c55e; --amber: #f59e0b; --red: #ef4444; --blue: #3b82f6; --border: #334155;
+      --turq: #23DFF1; --pink: #EE7AE0; /* colores de marca BuBa */
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: var(--bg); color: var(--text); min-height: 100vh;
+      background: linear-gradient(135deg, var(--turq) 0%, var(--pink) 100%);
+      color: var(--text); min-height: 100vh;
       display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    h1 {
+      background: linear-gradient(90deg, var(--turq), var(--pink));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
     }
     .app {
       width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--border);
@@ -34,7 +40,7 @@
     }
     button:active { transform: scale(.97); }
     button:disabled { opacity: .3; cursor: not-allowed; }
-    .btn-primary { background: var(--blue); width: 100%; margin-top: 18px; }
+    .btn-primary { background: var(--turq); color: #06272b; width: 100%; margin-top: 18px; }
     .btn-green { background: var(--green); }
     .btn-amber { background: var(--amber); }
     .btn-red { background: var(--red); }
@@ -55,10 +61,20 @@
     .badge.ON_BREAK  { background: rgba(245,158,11,.18); color: #fcd34d; }
     .no-pin { font-size: 11px; color: var(--amber); }
 
-    /* PIN pad */
-    .pin-dots { display: flex; gap: 12px; justify-content: center; margin: 18px 0; height: 18px; }
-    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); }
-    .pin-dot.on { background: var(--blue); border-color: var(--blue); }
+    /* PIN pad: digitos visibles, hasta 6 */
+    .pin-dots {
+      text-align: center; margin: 14px 0; min-height: 46px;
+      font-size: 34px; font-weight: 700; letter-spacing: 10px; color: var(--turq);
+    }
+    .pin-dots .ph { color: var(--border); }
+
+    /* Grilla semanal de horas */
+    .wk { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
+    .wk .d { background: #0b1220; border: 1px solid var(--border); border-radius: 10px; padding: 8px 2px; text-align: center; }
+    .wk .d.on { border-color: var(--turq); }
+    .wk .dn { font-size: 11px; color: var(--muted); }
+    .wk .dh { font-size: 13px; font-weight: 700; margin-top: 4px; }
+    .wk .d.on .dh { color: var(--turq); }
     .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .keypad button { background: #0b1220; border: 1px solid var(--border); color: var(--text); font-size: 24px; padding: 20px; }
 
@@ -136,9 +152,10 @@
         <button class="btn-amber" id="aBreakOut">Terminar break</button>
       </div>
       <button class="btn-ghost" style="width:100%;margin-top:14px;" id="aHours">Mis horas de esta semana</button>
-      <div id="aHoursBox" style="display:none;text-align:center;margin-top:12px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--border);">
-        <div style="font-size:28px;font-weight:700;" id="aHoursValue">–</div>
-        <div class="meta" id="aHoursMeta"></div>
+      <div id="aHoursBox" style="display:none;margin-top:12px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--border);">
+        <div class="meta" id="aHoursMeta" style="margin-top:0;"></div>
+        <div class="wk" id="aHoursGrid"></div>
+        <div style="text-align:center;font-size:24px;font-weight:700;margin-top:10px;">Total: <span id="aHoursValue">–</span></div>
       </div>
       <div id="actMsg" class="msg error"></div>
     </section>
@@ -234,13 +251,11 @@
       });
     }
     function renderDots() {
-      const d = $("pinDots"); d.innerHTML = "";
-      const len = Math.max(4, current.pin.length);
-      for (let i = 0; i < len; i++) {
-        const dot = document.createElement("div");
-        dot.className = "pin-dot" + (i < current.pin.length ? " on" : "");
-        d.appendChild(dot);
-      }
+      // Muestra los digitos tipeados (visibles) y guiones para los que faltan
+      // hasta el minimo de 4. Acepta de 4 a 6 digitos.
+      const typed = current.pin.split("").join("");
+      const placeholders = Math.max(0, 4 - current.pin.length);
+      $("pinDots").innerHTML = typed + '<span class="ph">' + "_".repeat(placeholders) + "</span>";
     }
     function pressKey(k) {
       $("pinMsg").style.display = "none";
@@ -313,12 +328,25 @@
     bindAction("aBreakIn",  "/api/kiosk/break/start","Break iniciado");
     bindAction("aBreakOut", "/api/kiosk/break/end",  "Break terminado");
 
+    const DAY_NAMES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+    function fmtHM(m) { return Math.floor(m/60) + ":" + String(m%60).padStart(2,"0"); }
+
     $("aHours").addEventListener("click", async () => {
       $("actMsg").style.display = "none";
       try {
         const h = await api("/api/kiosk/worked-hours", "POST", { employeeId: current.id, pin: current.pin });
-        $("aHoursValue").textContent = h.totalWorkedHours.toFixed(1) + " h";
-        $("aHoursMeta").textContent = "Semana actual · neto de breaks";
+        let cells = "";
+        h.days.forEach((d, i) => {
+          const dayNum = parseInt(d.date.split("-")[2], 10);
+          const has = d.workedMinutes > 0;
+          cells += '<div class="d' + (has ? ' on' : '') + '">' +
+                   '<div class="dn">' + DAY_NAMES[i] + ' ' + dayNum + '</div>' +
+                   '<div class="dh">' + (has ? fmtHM(d.workedMinutes) : '–') + '</div></div>';
+        });
+        $("aHoursGrid").innerHTML = cells;
+        $("aHoursValue").textContent = fmtHM(h.totalWorkedMinutes) + " h";
+        $("aHoursMeta").textContent = "Semana del " + h.weekStart.split("-").reverse().slice(0,2).join("/") +
+                                      " · neto de breaks";
         $("aHoursBox").style.display = "block";
       } catch (err) {
         $("actMsg").textContent = err.message; $("actMsg").style.display = "block";

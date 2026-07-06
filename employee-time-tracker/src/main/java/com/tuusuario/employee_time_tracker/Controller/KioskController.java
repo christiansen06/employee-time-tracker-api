@@ -3,7 +3,7 @@ package com.tuusuario.employee_time_tracker.Controller;
 import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.KioskActionRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.KioskEmployeeDTO;
-import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Service.KioskService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -55,7 +55,7 @@ public class KioskController {
     }
 
     @PostMapping("/worked-hours")
-    public ResponseEntity<WorkedHoursResponseDTO> workedHours(@Valid @RequestBody KioskActionRequestDTO dto) {
+    public ResponseEntity<WeeklyHoursDetailDTO> workedHours(@Valid @RequestBody KioskActionRequestDTO dto) {
         return ResponseEntity.ok(kioskService.weeklyWorkedHours(dto.getEmployeeId(), dto.getPin()));
     }
 }
