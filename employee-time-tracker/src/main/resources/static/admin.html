@@ -417,6 +417,11 @@
   function showLogin(){ localStorage.removeItem(TOKEN_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
   function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); }
 
+  // "Quien trabaja ahora" se refresca solo cada 60s mientras este visible
+  setInterval(() => {
+    if (token() && !$("panel").classList.contains("hidden") && !$("tab-ahora").classList.contains("hidden")) loadNow();
+  }, 60000);
+
   if(token()) showPanel(); else showLogin();
 </script>
 </body>

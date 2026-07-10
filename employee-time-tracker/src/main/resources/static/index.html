@@ -403,6 +403,11 @@
     }
     setInterval(tick, 1000); tick();
 
+    // La grilla se refresca sola cada 60s (estados al dia en pantalla fija)
+    setInterval(() => {
+      if (token() && !$("gridView").classList.contains("hidden")) loadGrid();
+    }, 60000);
+
     // Init
     buildKeypad();
     if (token()) showGrid(); else showSetup();

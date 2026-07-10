@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
-    List<TimeEntry> findByStatus(TimeEntryStatus status);
     List<TimeEntry> findByClockInBetween(LocalDateTime start, LocalDateTime end);
     List<TimeEntry> findByEmployeeId(Long employeeId);
 
