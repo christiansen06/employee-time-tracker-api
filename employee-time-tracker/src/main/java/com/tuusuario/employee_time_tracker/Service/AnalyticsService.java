@@ -1,7 +1,6 @@
 package com.tuusuario.employee_time_tracker.Service;
 
 import java.time.format.DateTimeParseException;
-import com.tuusuario.employee_time_tracker.Exception.NoDataFoundException;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.BreakSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
@@ -17,14 +16,14 @@ import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collection;
 import java.util.List;
-import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -34,77 +33,48 @@ public class AnalyticsService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeService employeeService;
 
+    // Nota de diseño: las consultas sin resultados devuelven listas vacias
+    // (200), no 404. Un rango sin fichadas es un caso normal, no un error.
+
     public List<TimeEntrySummaryDTO> getActiveTimeEntries() {
         // Incluye tambien a los que estan en break: su jornada sigue abierta.
-        List<TimeEntry> activeEntries = timeEntryRepository.findByStatusIn(
-                List.of(TimeEntryStatus.CLOCKED_IN, TimeEntryStatus.ON_BREAK));
-
-        validateNotEmpty(
-                activeEntries,
-                () -> new NoDataFoundException("There are no active time entries.")
-        );
-
-        return activeEntries.stream()
+        return timeEntryRepository.findByStatusIn(
+                        List.of(TimeEntryStatus.CLOCKED_IN, TimeEntryStatus.ON_BREAK))
+                .stream()
                 .map(this::mapToTimeEntrySummaryDTO)
                 .toList();
     }
 
     public List<BreakSummaryDTO> getActiveBreaks() {
-        List<BreakEntry> activeBreaks =
-                breakEntryRepository.findByBreakStatus(BreakStatus.ON_BREAK);
-
-        validateNotEmpty(
-                activeBreaks,
-                () -> new NoDataFoundException("There are no active breaks.")
-        );
-
-        return activeBreaks.stream()
+        return breakEntryRepository.findByBreakStatus(BreakStatus.ON_BREAK)
+                .stream()
                 .map(this::mapToBreakSummaryDTO)
                 .toList();
     }
 
     public List<EmployeeResponseDTO> getActiveEmployees() {
-        List<Employee> activeEmployees = employeeRepository.findByActiveTrue();
-
-        validateNotEmpty(
-                activeEmployees,
-                () -> new NoDataFoundException("There are no active employees.")
-        );
-
-        return activeEmployees.stream()
+        return employeeRepository.findByActiveTrue()
+                .stream()
                 .map(this::mapToEmployeeDTO)
                 .toList();
     }
 
-    public List<TimeEntrySummaryDTO> getEntriesBetweenDates(
+    public Page<TimeEntrySummaryDTO> getEntriesBetweenDates(
             String start,
-            String end
+            String end,
+            Pageable pageable
     ) {
         LocalDateTime startDate = parseDateTime(start, "start");
         LocalDateTime endDate = parseDateTime(end, "end");
 
         validateDateRange(startDate, endDate);
 
-        List<TimeEntry> entries =
-                timeEntryRepository.findByClockInBetween(startDate, endDate);
-
-        validateNotEmpty(
-                entries,
-                () -> new NoDataFoundException(
-                        "No time entries found between "
-                                + startDate
-                                + " and "
-                                + endDate
-                                + "."
-                )
-        );
-
-        return entries.stream()
-                .map(this::mapToTimeEntrySummaryDTO)
-                .toList();
+        return timeEntryRepository
+                .findByClockInBetween(startDate, endDate, pageable)
+                .map(this::mapToTimeEntrySummaryDTO);
     }
 
-    public List<TimeEntrySummaryDTO> getEmployeeEntries(Long employeeId) {
+    public Page<TimeEntrySummaryDTO> getEmployeeEntries(Long employeeId, Pageable pageable) {
         validateEmployeeId(employeeId);
 
         Employee employee = employeeRepository.findById(employeeId)
@@ -114,18 +84,9 @@ public class AnalyticsService {
                         )
                 );
 
-        List<TimeEntry> entries = timeEntryRepository.findByEmployeeId(employee.getId());
-
-        validateNotEmpty(
-                entries,
-                () -> new NoDataFoundException(
-                        "No time entries found for employee with id: " + employee.getId()
-                )
-        );
-
-        return entries.stream()
-                .map(this::mapToTimeEntrySummaryDTO)
-                .toList();
+        return timeEntryRepository
+                .findByEmployeeId(employee.getId(), pageable)
+                .map(this::mapToTimeEntrySummaryDTO);
     }
 
     /**
@@ -198,15 +159,6 @@ public class AnalyticsService {
     private void validateDateRange(LocalDateTime start, LocalDateTime end) {
         if (start.isAfter(end)) {
             throw new IllegalArgumentException("start date cannot be after end date.");
-        }
-    }
-
-    private <T> void validateNotEmpty(
-            Collection<T> data,
-            Supplier<? extends RuntimeException> exceptionSupplier
-    ) {
-        if (data == null || data.isEmpty()) {
-            throw exceptionSupplier.get();
         }
     }
 

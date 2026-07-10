@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "break_entries")
+@EntityListeners(org.springframework.data.jpa.domain.support.AuditingEntityListener.class)
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter @Setter
@@ -35,4 +36,12 @@ public class BreakEntry
     @JoinColumn(name = "time_entry_id")
     @JsonBackReference
     private TimeEntry timeEntry;
+
+    @org.springframework.data.annotation.CreatedDate
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @org.springframework.data.annotation.LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

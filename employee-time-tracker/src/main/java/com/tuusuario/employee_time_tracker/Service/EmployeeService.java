@@ -3,6 +3,7 @@ package com.tuusuario.employee_time_tracker.Service;
 import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Exception.DuplicateResourceException;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkIntervalDTO;
@@ -12,6 +13,7 @@ import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Util.WorkTimeCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -56,11 +58,19 @@ public class EmployeeService {
 
     //CREATE
     public EmployeeResponseDTO createEmployee(EmployeeRequestDTO request) {
+        if (employeeRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException(
+                    "An employee with email " + request.getEmail() + " already exists.");
+        }
+
         Employee employee = Employee.builder()
                 .name(request.getName())
                 .lastName(request.getLastName())
                 .email(request.getEmail())
                 .position(request.getPosition())
+                .hourlyRate(request.getHourlyRate())
+                .expectedClockIn(request.getExpectedClockIn())
+                .weeklyHoursTarget(request.getWeeklyHoursTarget())
                 .active(true)
                 .build();
 
@@ -84,10 +94,18 @@ public class EmployeeService {
     public EmployeeResponseDTO updateEmployee(Long id, EmployeeRequestDTO request) {
         Employee existingEmployee = getEmployeeEntity(id);
 
+        if (employeeRepository.existsByEmailAndIdNot(request.getEmail(), id)) {
+            throw new DuplicateResourceException(
+                    "An employee with email " + request.getEmail() + " already exists.");
+        }
+
         existingEmployee.setName(request.getName());
         existingEmployee.setLastName(request.getLastName());
         existingEmployee.setEmail(request.getEmail());
         existingEmployee.setPosition(request.getPosition());
+        existingEmployee.setHourlyRate(request.getHourlyRate());
+        existingEmployee.setExpectedClockIn(request.getExpectedClockIn());
+        existingEmployee.setWeeklyHoursTarget(request.getWeeklyHoursTarget());
 
         return toResponse(employeeRepository.save(existingEmployee));
     }
@@ -233,19 +251,12 @@ public class EmployeeService {
 
     /** Minutos netos de una jornada: duracion menos breaks. */
     private long entryNetMinutes(TimeEntry entry) {
-        long worked = Duration.between(entry.getClockIn(), entry.getClockOut()).toMinutes();
-        return worked - entryBreakMinutes(entry);
+        return WorkTimeCalculator.netMinutes(entry);
     }
 
     /** Total de minutos de break de una jornada. */
     private long entryBreakMinutes(TimeEntry entry) {
-        if (entry.getBreaks() == null) {
-            return 0;
-        }
-        return entry.getBreaks().stream()
-                .filter(b -> b.getDurationMinutes() != null)
-                .mapToLong(BreakEntry::getDurationMinutes)
-                .sum();
+        return WorkTimeCalculator.breakMinutes(entry);
     }
 
     //Metodos Auxiliares
@@ -265,6 +276,9 @@ public class EmployeeService {
                 .position(employee.getPosition())
                 .active(employee.getActive())
                 .hasPin(employee.getPinHash() != null)
+                .hourlyRate(employee.getHourlyRate())
+                .expectedClockIn(employee.getExpectedClockIn())
+                .weeklyHoursTarget(employee.getWeeklyHoursTarget())
                 .build();
     }
 

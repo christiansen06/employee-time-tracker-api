@@ -24,6 +24,7 @@ public class AuthService {
     private final EmployeeRepository employeeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final RefreshTokenService refreshTokenService;
 
     /** Duracion del token del dispositivo kiosco (default 30 dias). */
     @Value("${jwt.kiosk-expiration-ms:2592000000}")
@@ -93,6 +94,19 @@ public class AuthService {
             throw new BadCredentialsException("Invalid username or password");
         }
 
+        return buildAuthResponse(user);
+    }
+
+    /**
+     * Canjea un refresh token valido por un access token nuevo.
+     * El refresh token usado se revoca y se emite uno nuevo (rotacion).
+     */
+    public AuthResponseDTO refresh(String rawRefreshToken) {
+        User user = refreshTokenService.consume(rawRefreshToken);
+        return buildAuthResponse(user);
+    }
+
+    private AuthResponseDTO buildAuthResponse(User user) {
         // El dispositivo kiosco recibe un token de larga duracion para no
         // tener que reconfigurarse cada hora.
         long ttl = user.getRole() == Role.KIOSK
@@ -101,6 +115,9 @@ public class AuthService {
 
         String token = jwtUtil.generateToken(user.getUsername(), ttl);
 
-        return new AuthResponseDTO(token);
+        return AuthResponseDTO.builder()
+                .token(token)
+                .refreshToken(refreshTokenService.issue(user))
+                .build();
     }
 }

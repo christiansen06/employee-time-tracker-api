@@ -41,7 +41,10 @@ public class SecurityConfig {
                                 "/manifest.json",
                                 "/assets/**",
                                 "/api/auth/login",
+                                "/api/auth/refresh",
                                 "/api/health",
+                                "/actuator/health",
+                                "/actuator/health/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
