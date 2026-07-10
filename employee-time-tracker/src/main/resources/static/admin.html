@@ -178,13 +178,37 @@
 
 <script>
   const TOKEN_KEY = "buba_admin_token";
+  const REFRESH_KEY = "buba_admin_refresh";
   const $ = (id) => document.getElementById(id);
   const token = () => localStorage.getItem(TOKEN_KEY);
 
-  async function api(path, method="GET", body=null) {
+  // Renueva el access token con el refresh token (una sola renovación en vuelo).
+  let refreshing = null;
+  async function tryRefresh(){
+    const rt = localStorage.getItem(REFRESH_KEY);
+    if (!rt) return false;
+    refreshing = refreshing || (async ()=>{
+      try {
+        const res = await fetch("/api/auth/refresh",{method:"POST",
+          headers:{"Content-Type":"application/json"}, body:JSON.stringify({refreshToken:rt})});
+        if (!res.ok) return false;
+        const data = await res.json();
+        localStorage.setItem(TOKEN_KEY, data.token);
+        if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+        return true;
+      } catch(_) { return false; }
+      finally { setTimeout(()=>{ refreshing=null; }, 0); }
+    })();
+    return refreshing;
+  }
+
+  async function api(path, method="GET", body=null, _retried=false) {
     const opts = { method, headers:{ "Authorization":"Bearer "+token() } };
     if (body){ opts.headers["Content-Type"]="application/json"; opts.body=JSON.stringify(body); }
     const res = await fetch(path, opts);
+    if (res.status===401 && !_retried && await tryRefresh()) {
+      return api(path, method, body, true);
+    }
     let data=null; try { data=await res.json(); } catch(_){}
     if (!res.ok) throw { status:res.status, message:(data&&data.message)||("Error "+res.status) };
     return data;
@@ -200,11 +224,12 @@
       const data = await res.json();
       if (!res.ok) throw { message:data.message||"Credenciales inválidas" };
       localStorage.setItem(TOKEN_KEY,data.token);
+      if (data.refreshToken) localStorage.setItem(REFRESH_KEY,data.refreshToken);
       showPanel();
     } catch(err){ flash($("loginMsg"), err.message, "error"); }
     finally { $("loginBtn").disabled=false; }
   });
-  $("logoutBtn").addEventListener("click", ()=>{ localStorage.removeItem(TOKEN_KEY); showLogin(); });
+  $("logoutBtn").addEventListener("click", ()=>{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); showLogin(); });
 
   // TABS
   document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
@@ -414,7 +439,7 @@
     flash(el, err.message, "error");
   }
 
-  function showLogin(){ localStorage.removeItem(TOKEN_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
+  function showLogin(){ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
   function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); }
 
   // "Quien trabaja ahora" se refresca solo cada 60s mientras este visible
