@@ -75,6 +75,14 @@ public class AnalyticsService {
     }
 
     public Page<TimeEntrySummaryDTO> getEmployeeEntries(Long employeeId, Pageable pageable) {
+        return getEmployeeEntries(employeeId, null, null, pageable);
+    }
+
+    /** Jornadas de un empleado, opcionalmente acotadas a [from, to] (fechas). */
+    public Page<TimeEntrySummaryDTO> getEmployeeEntries(Long employeeId,
+                                                        LocalDate from,
+                                                        LocalDate to,
+                                                        Pageable pageable) {
         validateEmployeeId(employeeId);
 
         Employee employee = employeeRepository.findById(employeeId)
@@ -84,9 +92,17 @@ public class AnalyticsService {
                         )
                 );
 
-        return timeEntryRepository
-                .findByEmployeeId(employee.getId(), pageable)
-                .map(this::mapToTimeEntrySummaryDTO);
+        Page<TimeEntry> page;
+        if (from != null && to != null) {
+            validateDateRange(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+            page = timeEntryRepository.findByEmployeeIdAndClockInBetween(
+                    employee.getId(), from.atStartOfDay(),
+                    to.plusDays(1).atStartOfDay(), pageable);
+        } else {
+            page = timeEntryRepository.findByEmployeeId(employee.getId(), pageable);
+        }
+
+        return page.map(this::mapToTimeEntrySummaryDTO);
     }
 
     /**

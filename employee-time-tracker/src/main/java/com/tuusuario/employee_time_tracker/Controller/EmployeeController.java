@@ -55,6 +55,13 @@ public class EmployeeController {
         employeeService.deactivateEmployee(id);
     }
 
+    //HARD DELETE (solo empleados sin historial; sino usar deactivate)
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteEmployee(@PathVariable Long id) {
+        employeeService.deleteEmployee(id);
+        return ResponseEntity.noContent().build();
+    }
+
     //RE-ACTIVATE
     @PatchMapping("/{id}/activate")
     public ResponseEntity<EmployeeResponseDTO> activateEmployee(@PathVariable Long id) {

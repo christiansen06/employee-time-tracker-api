@@ -1,5 +1,6 @@
 package com.tuusuario.employee_time_tracker.Controller;
 
+import com.tuusuario.employee_time_tracker.Model.Dto.CreateTimeEntryRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.UpdateTimeEntryRequestDTO;
@@ -20,6 +21,17 @@ public class TimeEntryController {
 
     private final TimeEntryService timeEntryService;
     private final EmployeeService employeeService;
+
+    // ---------- ADMIN: alta manual de una jornada olvidada ----------
+
+    /** Crea una jornada ya cerrada (el empleado trabajo pero no ficho). */
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<TimeEntrySummaryDTO> createEntry(
+            @Valid @RequestBody CreateTimeEntryRequestDTO dto) {
+        return ResponseEntity.ok(timeEntryService.createManualEntry(
+                dto.getEmployeeId(), dto.getClockIn(), dto.getClockOut()));
+    }
 
     // ---------- ADMIN: fichar a cualquier empleado por id ----------
 

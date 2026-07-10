@@ -178,13 +178,23 @@
       </div>
 
       <div class="card" id="entriesCard" style="display:none;">
-        <h3 style="margin-top:0;">Jornadas <span class="muted" style="font-size:13px;">(editá entrada/salida y guardá)</span></h3>
-        <div style="overflow-x:auto;">
+        <h3 style="margin-top:0;">Jornadas de la semana <span class="muted" style="font-size:13px;" id="entriesWho"></span></h3>
+        <div class="row">
+          <button class="btn-ghost" id="entWeekPrev" title="Semana anterior">←</button>
+          <input type="date" id="entWeekDate" style="width:auto;">
+          <button class="btn-ghost" id="entWeekNext" title="Semana siguiente">→</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:14px;">
           <table id="entriesTable">
-            <thead><tr><th>Entrada</th><th>Salida</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Horas</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+        <p class="muted" style="font-size:12px;margin-bottom:0;">
+          Días vacíos: cargá entrada y salida y tocá <strong>Agregar</strong> para registrar la jornada
+          (ej.: el empleado trabajó pero no fichó). El <strong>+</strong> agrega un segundo turno en el mismo día.
+          Todo cambio queda en la bitácora de auditoría.
+        </p>
         <div id="entriesMsg" class="msg"></div>
       </div>
     </div>
@@ -373,7 +383,8 @@
           : '<button class="btn-green" data-act="activate" data-id="'+e.id+'">Activar</button>';
         tr.innerHTML='<td>'+e.name+' '+e.lastName+'</td><td>'+e.position+'</td><td>'+estado+'</td><td>'+pin+'</td>'+
           '<td><div class="row actions"><button class="btn-amber" data-act="pin" data-id="'+e.id+'">PIN</button>'+
-          '<button class="btn-ghost" data-act="edit" data-id="'+e.id+'">✎ Editar</button>'+toggle+'</div></td>';
+          '<button class="btn-ghost" data-act="edit" data-id="'+e.id+'">✎ Editar</button>'+toggle+
+          '<button class="btn-red" data-act="delete" data-id="'+e.id+'" title="Eliminar (solo si no tiene jornadas)">🗑</button></div></td>';
         tb.appendChild(tr);
       });
       tb.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>empAction(b.dataset.act,b.dataset.id)));
@@ -407,6 +418,11 @@
         await api("/api/employees/"+id+"/deactivate","PATCH");
       } else if(act==="activate"){
         await api("/api/employees/"+id+"/activate","PATCH");
+      } else if(act==="delete"){
+        const e = empCache.find(x=>String(x.id)===String(id));
+        if(!confirm("¿Eliminar definitivamente a "+(e?e.name+" "+e.lastName:"este empleado")+"?\nSolo es posible si no tiene jornadas registradas; si trabajó alguna vez, conviene Desactivar para conservar el historial.")) return;
+        await api("/api/employees/"+id,"DELETE");
+        flash($("empMsg"),"Empleado eliminado.","ok");
       }
       loadEmployees();
     } catch(err){ handle(err,$("empMsg")); }
@@ -493,37 +509,141 @@
     } catch(err){ handle(err,$("weekMsg")); }
   });
 
-  // JORNADAS (edicion)
-  $("repEntries").addEventListener("click", loadEntries);
-  async function loadEntries(){
-    flash($("repMsg"),""); flash($("entriesMsg"),"");
+  // JORNADAS: editor semanal (Lun a Dom) con alta, edicion y borrado
+  let entriesEmpId = null;
+
+  function mondayOf(dateStr){
+    const d = new Date(dateStr+"T00:00:00");
+    const day = (d.getDay()+6)%7; // 0=lunes
+    d.setDate(d.getDate()-day);
+    return d;
+  }
+  function isoDate(d){
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+
+  $("repEntries").addEventListener("click", ()=>{
     const id=$("repEmp").value;
     if(!id){ flash($("repMsg"),"Elegí un empleado.","error"); return; }
-    const tb = $("entriesTable").querySelector("tbody"); tb.innerHTML="";
+    entriesEmpId = id;
+    if(!$("entWeekDate").value) $("entWeekDate").value = new Date().toISOString().substring(0,10);
+    $("entriesWho").textContent = "· "+$("repEmp").selectedOptions[0].textContent;
     $("entriesCard").style.display="block";
-    const page = await safe("/api/analytics/employees/"+id+"/entries");
+    loadEntries();
+  });
+  $("entWeekDate").addEventListener("change", ()=>{ if(entriesEmpId) loadEntries(); });
+  $("entWeekPrev").addEventListener("click", ()=>shiftWeek(-7));
+  $("entWeekNext").addEventListener("click", ()=>shiftWeek(7));
+  function shiftWeek(days){
+    if(!entriesEmpId) return;
+    const d = new Date($("entWeekDate").value+"T00:00:00");
+    d.setDate(d.getDate()+days);
+    $("entWeekDate").value = isoDate(d);
+    loadEntries();
+  }
+
+  function entryRow(dayIso, dayLabel, e){
+    // e = jornada existente o null (fila vacia para crear)
+    const tr=document.createElement("tr");
+    const key = e ? e.timeEntryId : "new-"+dayIso+"-"+Math.random().toString(36).slice(2,7);
+    const inVal = e && e.clockIn ? e.clockIn.substring(11,16) : "";
+    const outVal = e && e.clockOut ? e.clockOut.substring(11,16) : "";
+    let horas = '<span class="muted">–</span>';
+    if (e && e.clockIn && e.clockOut){
+      const mins = Math.round((new Date(e.clockOut)-new Date(e.clockIn))/60000);
+      horas = fmtHM(Math.max(0,mins));
+    }
+    let badge = "";
+    if (e && e.status !== "FINISHED") badge = ' <span class="badge warn">Abierta</span>';
+    if (e && e.autoClosed) badge = ' <span class="badge warn" title="Cerrada automáticamente: corregí la salida real">⚠ Auto</span>';
+    const btn = e
+      ? '<button class="btn-green" data-save="'+e.timeEntryId+'" data-day="'+dayIso+'" data-key="'+key+'">Guardar</button>'+
+        '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'
+      : '<button class="btn-green" data-create="'+dayIso+'" data-key="'+key+'">Agregar</button>';
+    tr.innerHTML =
+      '<td>'+dayLabel+'</td>'+
+      '<td><input type="time" id="tin-'+key+'" value="'+inVal+'" style="width:110px;"></td>'+
+      '<td><input type="time" id="tout-'+key+'" value="'+outVal+'" style="width:110px;"></td>'+
+      '<td>'+horas+badge+'</td>'+
+      '<td><div class="row actions">'+btn+'</div></td>';
+    return tr;
+  }
+
+  async function loadEntries(){
+    flash($("entriesMsg"),"");
+    const tb = $("entriesTable").querySelector("tbody"); tb.innerHTML="";
+    const monday = mondayOf($("entWeekDate").value);
+    const from = isoDate(monday);
+    const sunday = new Date(monday); sunday.setDate(sunday.getDate()+6);
+    const to = isoDate(sunday);
+    const page = await safe("/api/analytics/employees/"+entriesEmpId+"/entries?from="+from+"&to="+to+"&size=100");
     const entries = Array.isArray(page) ? page : (page.content || []);
-    if(!entries.length){ tb.innerHTML='<tr><td colspan="4" class="muted">Este empleado no tiene jornadas registradas.</td></tr>'; return; }
-    entries.sort((a,b)=> (b.clockIn||"").localeCompare(a.clockIn||""));
-    entries.forEach(e=>{
-      const tr=document.createElement("tr");
-      const inVal = e.clockIn ? e.clockIn.substring(0,16) : "";
-      const outVal = e.clockOut ? e.clockOut.substring(0,16) : "";
-      const abierta = e.status !== "FINISHED";
-      let badge = abierta ? '<span class="badge warn">Abierta</span>' : '<span class="badge on">Cerrada</span>';
-      if (e.autoClosed) badge = '<span class="badge warn" title="Cerrada automáticamente con 0 horas: corregí la salida real">⚠ Auto · corregir</span>';
-      tr.innerHTML =
-        '<td><input type="datetime-local" value="'+inVal+'" id="in-'+e.timeEntryId+'"></td>'+
-        '<td><input type="datetime-local" value="'+outVal+'" id="out-'+e.timeEntryId+'"></td>'+
-        '<td>'+badge+'</td>'+
-        '<td><div class="row actions">'+
-          '<button class="btn-green" data-save="'+e.timeEntryId+'">Guardar</button>'+
-          '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'+
-        '</div></td>';
-      tb.appendChild(tr);
-    });
-    tb.querySelectorAll("button[data-save]").forEach(b=>b.addEventListener("click",()=>saveEntry(b.dataset.save)));
+    const byDay = {};
+    entries.forEach(e=>{ const d=(e.clockIn||"").substring(0,10); (byDay[d]=byDay[d]||[]).push(e); });
+
+    for(let i=0;i<7;i++){
+      const d = new Date(monday); d.setDate(d.getDate()+i);
+      const dIso = isoDate(d);
+      const label = DAY_NAMES[i]+" "+dIso.substring(8,10)+"/"+dIso.substring(5,7);
+      const dayEntries = (byDay[dIso]||[]).sort((a,b)=>(a.clockIn||"").localeCompare(b.clockIn||""));
+      if(!dayEntries.length){
+        tb.appendChild(entryRow(dIso, label, null));
+      } else {
+        dayEntries.forEach((e,idx)=>{
+          const lbl = idx===0
+            ? label+' <button class="btn-ghost" data-add="'+dIso+'" title="Agregar otro turno este día" style="padding:2px 8px;font-size:12px;">+</button>'
+            : '<span class="muted">"</span>';
+          tb.appendChild(entryRow(dIso, lbl, e));
+        });
+      }
+    }
+    bindEntryButtons(tb);
+  }
+
+  function bindEntryButtons(tb){
+    tb.querySelectorAll("button[data-save]").forEach(b=>b.addEventListener("click",()=>saveEntry(b.dataset.save, b.dataset.day, b.dataset.key)));
     tb.querySelectorAll("button[data-del]").forEach(b=>b.addEventListener("click",()=>deleteEntry(b.dataset.del)));
+    tb.querySelectorAll("button[data-create]").forEach(b=>b.addEventListener("click",()=>createEntry(b.dataset.create, b.dataset.key)));
+    tb.querySelectorAll("button[data-add]").forEach(b=>b.addEventListener("click",()=>{
+      const row = b.closest("tr");
+      const extra = entryRow(b.dataset.add, '<span class="muted">"</span>', null);
+      row.parentNode.insertBefore(extra, row.nextSibling);
+      bindEntryButtons(extra.parentNode);
+    }));
+  }
+
+  /** Combina el dia con las horas elegidas; si la salida es <= entrada asume que cruza medianoche. */
+  function buildRange(dayIso, tin, tout){
+    const clockIn = dayIso+"T"+tin+":00";
+    let outDay = dayIso;
+    if (tout <= tin){
+      const d = new Date(dayIso+"T00:00:00"); d.setDate(d.getDate()+1);
+      outDay = isoDate(d);
+    }
+    return { clockIn, clockOut: outDay+"T"+tout+":00" };
+  }
+
+  async function createEntry(dayIso, key){
+    flash($("entriesMsg"),"");
+    const tin=$("tin-"+key).value, tout=$("tout-"+key).value;
+    if(!tin || !tout){ flash($("entriesMsg"),"Completá entrada y salida para agregar la jornada.","error"); return; }
+    try {
+      const range = buildRange(dayIso, tin, tout);
+      await api("/api/time-entries","POST",{ employeeId: Number(entriesEmpId), ...range });
+      flash($("entriesMsg"),"Jornada agregada.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
+  }
+
+  async function saveEntry(id, dayIso, key){
+    flash($("entriesMsg"),"");
+    const tin=$("tin-"+key).value, tout=$("tout-"+key).value;
+    if(!tin || !tout){ flash($("entriesMsg"),"Completá entrada y salida (la jornada editada queda cerrada).","error"); return; }
+    try {
+      await api("/api/time-entries/"+id,"PUT", buildRange(dayIso, tin, tout));
+      flash($("entriesMsg"),"Jornada actualizada.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
   }
 
   async function deleteEntry(id){
@@ -532,17 +652,6 @@
     try {
       await api("/api/time-entries/"+id,"DELETE");
       flash($("entriesMsg"),"Jornada eliminada.","ok");
-      loadEntries();
-    } catch(err){ handle(err,$("entriesMsg")); }
-  }
-
-  async function saveEntry(id){
-    flash($("entriesMsg"),"");
-    const clockIn = $("in-"+id).value, clockOut = $("out-"+id).value;
-    if(!clockIn || !clockOut){ flash($("entriesMsg"),"Completá entrada y salida (la jornada editada queda cerrada).","error"); return; }
-    try {
-      await api("/api/time-entries/"+id,"PUT",{clockIn, clockOut});
-      flash($("entriesMsg"),"Jornada actualizada.","ok");
       loadEntries();
     } catch(err){ handle(err,$("entriesMsg")); }
   }

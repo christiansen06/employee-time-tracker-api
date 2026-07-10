@@ -13,6 +13,8 @@ import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
+import com.tuusuario.employee_time_tracker.Repository.UserRepository;
 import com.tuusuario.employee_time_tracker.Util.WorkTimeCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,6 +36,9 @@ public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final CurrentEmployeeService currentEmployeeService;
     private final PasswordEncoder passwordEncoder;
+    private final UserRepository userRepository;
+    private final TimeEntryRepository timeEntryRepository;
+    private final AuditLogService auditLogService;
 
     /** Asigna (o reemplaza) el PIN de fichaje del empleado, hasheado. */
     public void setPin(Long id, String rawPin) {
@@ -115,6 +120,34 @@ public class EmployeeService {
         Employee employee = getEmployeeEntity(id);
         employee.setActive(false);
         employeeRepository.save(employee);
+    }
+
+    /**
+     * Baja fisica de un empleado. Solo se permite si no tiene jornadas
+     * registradas ni cuenta de login vinculada: el historial laboral no se
+     * borra (para eso esta la desactivacion).
+     */
+    public void deleteEmployee(Long id) {
+        Employee employee = getEmployeeEntity(id);
+
+        if (timeEntryRepository.existsByEmployeeId(id)) {
+            throw new IllegalStateException(
+                    "This employee has registered time entries. "
+                            + "Deactivate the employee instead of deleting, "
+                            + "to preserve the work history.");
+        }
+
+        if (userRepository.existsByEmployee_Id(id)) {
+            throw new IllegalStateException(
+                    "This employee is linked to a login account. "
+                            + "Deactivate the employee instead of deleting.");
+        }
+
+        auditLogService.record("EMPLOYEE", id, "DELETE",
+                "name=" + employee.getName() + " " + employee.getLastName()
+                        + ", email=" + employee.getEmail());
+
+        employeeRepository.delete(employee);
     }
 
     //ACTIVATE

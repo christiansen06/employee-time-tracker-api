@@ -16,6 +16,14 @@ public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
     Page<TimeEntry> findByClockInBetween(LocalDateTime start, LocalDateTime end, Pageable pageable);
     List<TimeEntry> findByEmployeeId(Long employeeId);
     Page<TimeEntry> findByEmployeeId(Long employeeId, Pageable pageable);
+    Page<TimeEntry> findByEmployeeIdAndClockInBetween(
+            Long employeeId, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    /** Jornadas cerradas del empleado que se pisan con el rango [start, end). */
+    boolean existsByEmployeeIdAndClockInLessThanAndClockOutGreaterThan(
+            Long employeeId, LocalDateTime end, LocalDateTime start);
+
+    boolean existsByEmployeeId(Long employeeId);
 
     boolean existsByEmployeeIdAndStatusIn(Long employeeId, Collection<TimeEntryStatus> statuses);
 
