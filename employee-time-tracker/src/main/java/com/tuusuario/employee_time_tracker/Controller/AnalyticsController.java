@@ -165,10 +165,15 @@ public class AnalyticsController {
     @GetMapping("/employees/{employeeId}/entries")
     public Page<TimeEntrySummaryDTO> getEmployeeEntries(
             @PathVariable Long employeeId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size
     ) {
-        return analyticsService.getEmployeeEntries(employeeId, buildPageable(page, size));
+        return analyticsService.getEmployeeEntries(
+                employeeId, from, to, buildPageable(page, size));
     }
 
     /** Paginado defensivo: nunca mas de 500 filas por pagina, siempre ordenado. */

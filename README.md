@@ -116,10 +116,10 @@ Documentación completa en Swagger (`/swagger-ui.html`).
 | Grupo | Endpoints clave |
 |---|---|
 | Auth | `POST /api/auth/login`, `/refresh`, `/register` |
-| Empleados (ADMIN) | CRUD `/api/employees`, `PUT /{id}/pin`, activar/desactivar, worked-hours |
+| Empleados (ADMIN) | ABM completo `/api/employees` (DELETE solo sin historial; sino desactivar), `PUT /{id}/pin`, activar/desactivar, worked-hours |
 | Kiosco (KIOSK) | `/api/kiosk/employees`, `verify`, `clock-in/out`, `break/start|end`, `worked-hours` |
 | Fichaje propio (EMPLOYEE) | `/api/time-entries/me/*`, `/api/breaks/me/*` |
-| Corrección (ADMIN) | `PUT/DELETE /api/time-entries/{id}` (queda en `audit_log`) |
+| Jornadas (ADMIN) | ABM: `POST /api/time-entries` (alta manual de jornada olvidada, sin solapamientos), `PUT/DELETE /{id}` — todo queda en `audit_log` |
 | Reportes (ADMIN) | `weekly-report(+/csv)`, `entries` y `employees/{id}/entries` (paginados) |
 | Analytics (ADMIN) | `summary(+/csv)`, `punctuality`, `overtime(+/csv)`, `absences`, `trends`, `audit-log` |
 

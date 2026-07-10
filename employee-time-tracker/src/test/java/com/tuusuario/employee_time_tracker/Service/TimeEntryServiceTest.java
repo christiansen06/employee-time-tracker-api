@@ -149,6 +149,49 @@ class TimeEntryServiceTest {
     }
 
     @Test
+    void createManualEntryCreatesFinishedEntryAndAudits() {
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
+        when(timeEntryRepository.existsByEmployeeIdAndClockInLessThanAndClockOutGreaterThan(
+                eq(1L), any(), any())).thenReturn(false);
+        when(timeEntryRepository.save(any(TimeEntry.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        TimeEntrySummaryDTO dto = service.createManualEntry(1L,
+                LocalDateTime.of(2026, 7, 9, 9, 0),
+                LocalDateTime.of(2026, 7, 9, 17, 0));
+
+        assertThat(dto.getStatus()).isEqualTo(TimeEntryStatus.FINISHED);
+        assertThat(dto.getClockIn()).isEqualTo(LocalDateTime.of(2026, 7, 9, 9, 0));
+        assertThat(dto.getClockOut()).isEqualTo(LocalDateTime.of(2026, 7, 9, 17, 0));
+        verify(auditLogService).record(eq("TIME_ENTRY"), any(), eq("CREATE"), anyString());
+    }
+
+    @Test
+    void createManualEntryRejectsInvertedRange() {
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
+
+        assertThatThrownBy(() -> service.createManualEntry(1L,
+                LocalDateTime.of(2026, 7, 9, 17, 0),
+                LocalDateTime.of(2026, 7, 9, 9, 0)))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(timeEntryRepository, never()).save(any());
+    }
+
+    @Test
+    void createManualEntryRejectsOverlapWithExistingEntry() {
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
+        when(timeEntryRepository.existsByEmployeeIdAndClockInLessThanAndClockOutGreaterThan(
+                eq(1L), any(), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.createManualEntry(1L,
+                LocalDateTime.of(2026, 7, 9, 9, 0),
+                LocalDateTime.of(2026, 7, 9, 17, 0)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("overlap");
+        verify(timeEntryRepository, never()).save(any());
+    }
+
+    @Test
     void clockOutByEmployeeIdFailsWithoutOpenEntry() {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
         when(timeEntryRepository.findFirstByEmployeeIdAndStatusInOrderByClockInDesc(

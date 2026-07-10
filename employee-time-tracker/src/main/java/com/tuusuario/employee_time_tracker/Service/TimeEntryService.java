@@ -78,6 +78,47 @@ public class TimeEntryService {
         return buildStatus(loadEmployee(employeeId)).getState();
     }
 
+    // ---------- ADMIN: alta manual de jornadas ----------
+
+    /**
+     * Crea una jornada ya cerrada para un empleado (ej.: trabajo pero se
+     * olvido de fichar). Queda registrada en la bitacora de auditoria.
+     */
+    public TimeEntrySummaryDTO createManualEntry(Long employeeId,
+                                                 LocalDateTime clockIn,
+                                                 LocalDateTime clockOut) {
+
+        Employee employee = loadEmployee(employeeId);
+
+        if (!clockOut.isAfter(clockIn)) {
+            throw new IllegalArgumentException("clockOut must be after clockIn.");
+        }
+
+        // No permitir superposicion con otra jornada ya registrada:
+        // duplicaria horas en reportes y liquidacion.
+        if (timeEntryRepository.existsByEmployeeIdAndClockInLessThanAndClockOutGreaterThan(
+                employeeId, clockOut, clockIn)) {
+            throw new IllegalStateException(
+                    "This time range overlaps an existing time entry for the employee.");
+        }
+
+        TimeEntry entry = TimeEntry.builder()
+                .clockIn(clockIn)
+                .clockOut(clockOut)
+                .status(TimeEntryStatus.FINISHED)
+                .autoClosed(false)
+                .employee(employee)
+                .build();
+
+        TimeEntry saved = timeEntryRepository.save(entry);
+
+        auditLogService.record("TIME_ENTRY", saved.getId(), "CREATE",
+                "manual: employeeId=" + employeeId
+                        + ", clockIn=" + clockIn + ", clockOut=" + clockOut);
+
+        return mapToDTO(saved);
+    }
+
     // ---------- ADMIN: correccion manual de jornadas ----------
 
     public TimeEntrySummaryDTO updateEntry(Long timeEntryId,

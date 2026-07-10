@@ -5,6 +5,8 @@ import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
+import com.tuusuario.employee_time_tracker.Repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -27,6 +29,9 @@ class EmployeeServiceTest {
     @Mock private EmployeeRepository employeeRepository;
     @Mock private CurrentEmployeeService currentEmployeeService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private UserRepository userRepository;
+    @Mock private TimeEntryRepository timeEntryRepository;
+    @Mock private AuditLogService auditLogService;
 
     @InjectMocks private EmployeeService service;
 
@@ -82,6 +87,49 @@ class EmployeeServiceTest {
         service.deactivateEmployee(1L);
 
         assertThat(existing.getActive()).isFalse();
+    }
+
+    @Test
+    void deleteEmployeeWithoutHistoryDeletesAndAudits() {
+        Employee existing = Employee.builder().id(1L).name("Juan").lastName("Perez")
+                .email("juan@test.com").position("Cocina").active(true).build();
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(timeEntryRepository.existsByEmployeeId(1L)).thenReturn(false);
+        when(userRepository.existsByEmployee_Id(1L)).thenReturn(false);
+
+        service.deleteEmployee(1L);
+
+        verify(employeeRepository).delete(existing);
+        verify(auditLogService).record(org.mockito.ArgumentMatchers.eq("EMPLOYEE"),
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq("DELETE"),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void deleteEmployeeWithTimeEntriesIsRejected() {
+        Employee existing = Employee.builder().id(1L).name("Juan").lastName("Perez")
+                .email("juan@test.com").position("Cocina").active(true).build();
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(timeEntryRepository.existsByEmployeeId(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteEmployee(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Deactivate");
+        verify(employeeRepository, never()).delete(any(Employee.class));
+    }
+
+    @Test
+    void deleteEmployeeWithLinkedAccountIsRejected() {
+        Employee existing = Employee.builder().id(1L).name("Juan").lastName("Perez")
+                .email("juan@test.com").position("Cocina").active(true).build();
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(timeEntryRepository.existsByEmployeeId(1L)).thenReturn(false);
+        when(userRepository.existsByEmployee_Id(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteEmployee(1L))
+                .isInstanceOf(IllegalStateException.class);
+        verify(employeeRepository, never()).delete(any(Employee.class));
     }
 
     @Test
