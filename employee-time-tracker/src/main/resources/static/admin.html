@@ -53,7 +53,15 @@
     .hidden{display:none;}
     .hours-big{font-size:30px;font-weight:700;}
     .actions button{padding:7px 10px;font-size:13px;}
-    @media(max-width:560px){ .grid-form{grid-template-columns:1fr;} td .actions{flex-direction:column;} }
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;}
+    .kpi .kpi-val{font-size:26px;font-weight:700;line-height:1.2;}
+    .kpi .kpi-lbl{font-size:12px;color:var(--muted);margin-top:2px;}
+    .kpi .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+    .range-btn{background:#0b1220;border:1px solid var(--border);color:var(--muted);}
+    .range-btn.active{background:var(--turq);color:#06272b;border-color:var(--turq);}
+    .chart-box{position:relative;height:260px;}
+    @media(max-width:560px){ .grid-form{grid-template-columns:1fr;} td .actions{flex-direction:column;} .chart-box{height:220px;} }
   </style>
 </head>
 <body>
@@ -86,19 +94,26 @@
       <button class="tab active" data-tab="empleados">Empleados</button>
       <button class="tab" data-tab="ahora">Quién trabaja ahora</button>
       <button class="tab" data-tab="reportes">Reportes</button>
+      <button class="tab" data-tab="analisis">Análisis</button>
     </div>
 
     <!-- EMPLEADOS -->
     <div id="tab-empleados">
       <div class="card">
-        <h3 style="margin-top:0;">Nuevo empleado</h3>
+        <h3 style="margin-top:0;" id="empFormTitle">Nuevo empleado</h3>
         <div class="grid-form">
           <div><label>Nombre</label><input id="nName"></div>
           <div><label>Apellido</label><input id="nLast"></div>
           <div><label>Email</label><input id="nEmail"></div>
           <div><label>Puesto</label><input id="nPos"></div>
+          <div><label>Valor hora <span class="muted">(opcional, para costo laboral)</span></label><input id="nRate" type="number" min="0" step="0.01" placeholder="ej: 3500"></div>
+          <div><label>Entrada esperada <span class="muted">(opcional, para puntualidad)</span></label><input id="nExpIn" type="time"></div>
+          <div><label>Tope semanal de horas <span class="muted">(opcional, default 48)</span></label><input id="nTarget" type="number" min="1" max="168" placeholder="48"></div>
         </div>
-        <button class="btn-green" style="margin-top:14px;" id="createBtn">Crear empleado</button>
+        <div class="row" style="margin-top:14px;">
+          <button class="btn-green" id="createBtn">Crear empleado</button>
+          <button class="btn-ghost" id="cancelEditBtn" style="display:none;">Cancelar edición</button>
+        </div>
         <div id="createMsg" class="msg"></div>
       </div>
 
@@ -173,9 +188,71 @@
         <div id="entriesMsg" class="msg"></div>
       </div>
     </div>
+
+    <!-- ANALISIS -->
+    <div id="tab-analisis" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <h3 style="margin:0;">Período</h3>
+          <div class="row">
+            <button class="btn-ghost" id="dlSummaryCsv">⬇ Resumen CSV</button>
+            <button class="btn-ghost" id="dlOvertimeCsv">⬇ Extras CSV</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button class="range-btn" data-days="7">7 días</button>
+          <button class="range-btn active" data-days="30">30 días</button>
+          <button class="range-btn" data-days="90">90 días</button>
+          <input type="date" id="anFrom" style="width:auto;">
+          <span class="muted">→</span>
+          <input type="date" id="anTo" style="width:auto;">
+          <button class="btn-primary" id="anApply">Aplicar</button>
+        </div>
+        <div id="anMsg" class="msg"></div>
+      </div>
+
+      <div class="kpis" id="kpiRow">
+        <div class="kpi"><div class="kpi-val" id="kpiHours">–</div><div class="kpi-lbl">Horas trabajadas</div><div class="kpi-sub" id="kpiHoursSub"></div></div>
+        <div class="kpi"><div class="kpi-val" id="kpiCost">–</div><div class="kpi-lbl">Costo laboral estimado</div><div class="kpi-sub" id="kpiCostSub"></div></div>
+        <div class="kpi"><div class="kpi-val" id="kpiAvg">–</div><div class="kpi-lbl">Promedio hs por jornada</div></div>
+        <div class="kpi"><div class="kpi-val" id="kpiLate">–</div><div class="kpi-lbl">Llegadas tarde</div><div class="kpi-sub" id="kpiLateSub"></div></div>
+        <div class="kpi"><div class="kpi-val" id="kpiAbs">–</div><div class="kpi-lbl">Ausencias</div><div class="kpi-sub" id="kpiAbsSub"></div></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Horas por día</h3>
+        <div class="chart-box"><canvas id="trendChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Horas por empleado</h3>
+        <div class="chart-box" id="hoursBox"><canvas id="hoursChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Puntualidad <span class="muted" style="font-size:13px;">(empleados con hora de entrada cargada)</span></h3>
+        <div style="overflow-x:auto;">
+          <table id="punctTable">
+            <thead><tr><th>Empleado</th><th>Entrada esperada</th><th>Días</th><th>Tardes</th><th>% tarde</th><th>Prom. retraso</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Horas extra</h3>
+        <div style="overflow-x:auto;">
+          <table id="otTable">
+            <thead><tr><th>Empleado</th><th>Extra diaria</th><th>Extra semanal</th><th>Tope semanal</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </section>
 </div>
 
+<script src="/assets/chart.umd.js"></script>
 <script>
   const TOKEN_KEY = "buba_admin_token";
   const REFRESH_KEY = "buba_admin_refresh";
@@ -235,21 +312,46 @@
   document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
     document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");
-    ["empleados","ahora","reportes"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
+    ["empleados","ahora","reportes","analisis"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
     if (t.dataset.tab==="ahora") loadNow();
     if (t.dataset.tab==="reportes") loadEmpOptions();
+    if (t.dataset.tab==="analisis") loadAnalytics();
   }));
 
   // EMPLEADOS
-  $("createBtn").addEventListener("click", async ()=>{
-    flash($("createMsg"),"");
+  let empCache = [];
+  let editingId = null;
+
+  function readEmpForm(){
     const body={ name:$("nName").value.trim(), lastName:$("nLast").value.trim(),
       email:$("nEmail").value.trim(), position:$("nPos").value.trim() };
-    if(!body.name||!body.lastName||!body.email||!body.position){ flash($("createMsg"),"Completá todos los campos.","error"); return; }
+    if($("nRate").value) body.hourlyRate = parseFloat($("nRate").value);
+    if($("nExpIn").value) body.expectedClockIn = $("nExpIn").value;
+    if($("nTarget").value) body.weeklyHoursTarget = parseInt($("nTarget").value,10);
+    return body;
+  }
+  function resetEmpForm(){
+    ["nName","nLast","nEmail","nPos","nRate","nExpIn","nTarget"].forEach(id=>$(id).value="");
+    editingId = null;
+    $("empFormTitle").textContent = "Nuevo empleado";
+    $("createBtn").textContent = "Crear empleado";
+    $("cancelEditBtn").style.display = "none";
+  }
+  $("cancelEditBtn").addEventListener("click", ()=>{ flash($("createMsg"),""); resetEmpForm(); });
+
+  $("createBtn").addEventListener("click", async ()=>{
+    flash($("createMsg"),"");
+    const body = readEmpForm();
+    if(!body.name||!body.lastName||!body.email||!body.position){ flash($("createMsg"),"Completá nombre, apellido, email y puesto.","error"); return; }
     try {
-      const emp = await api("/api/employees","POST",body);
-      flash($("createMsg"),"Empleado creado: "+emp.name+" "+emp.lastName+". Ahora asignale un PIN.","ok");
-      ["nName","nLast","nEmail","nPos"].forEach(id=>$(id).value="");
+      if (editingId){
+        const emp = await api("/api/employees/"+editingId,"PUT",body);
+        flash($("createMsg"),"Empleado actualizado: "+emp.name+" "+emp.lastName+".","ok");
+      } else {
+        const emp = await api("/api/employees","POST",body);
+        flash($("createMsg"),"Empleado creado: "+emp.name+" "+emp.lastName+". Ahora asignale un PIN.","ok");
+      }
+      resetEmpForm();
       loadEmployees();
     } catch(err){ handle(err,$("createMsg")); }
   });
@@ -259,6 +361,7 @@
     flash($("empMsg"),"");
     try {
       const emps = await api("/api/employees");
+      empCache = emps;
       const tb = $("empTable").querySelector("tbody"); tb.innerHTML="";
       if(!emps.length){ tb.innerHTML='<tr><td colspan="5" class="muted">Sin empleados todavía.</td></tr>'; return; }
       emps.forEach(e=>{
@@ -269,7 +372,8 @@
           ? '<button class="btn-ghost" data-act="deactivate" data-id="'+e.id+'">Desactivar</button>'
           : '<button class="btn-green" data-act="activate" data-id="'+e.id+'">Activar</button>';
         tr.innerHTML='<td>'+e.name+' '+e.lastName+'</td><td>'+e.position+'</td><td>'+estado+'</td><td>'+pin+'</td>'+
-          '<td><div class="row actions"><button class="btn-amber" data-act="pin" data-id="'+e.id+'">PIN</button>'+toggle+'</div></td>';
+          '<td><div class="row actions"><button class="btn-amber" data-act="pin" data-id="'+e.id+'">PIN</button>'+
+          '<button class="btn-ghost" data-act="edit" data-id="'+e.id+'">✎ Editar</button>'+toggle+'</div></td>';
         tb.appendChild(tr);
       });
       tb.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>empAction(b.dataset.act,b.dataset.id)));
@@ -285,6 +389,20 @@
         if(!/^\d{4,6}$/.test(pin)){ flash($("empMsg"),"El PIN debe ser de 4 a 6 dígitos.","error"); return; }
         await api("/api/employees/"+id+"/pin","PUT",{pin});
         flash($("empMsg"),"PIN asignado.","ok");
+      } else if(act==="edit"){
+        const e = empCache.find(x=>String(x.id)===String(id));
+        if(!e) return;
+        editingId = e.id;
+        $("nName").value=e.name; $("nLast").value=e.lastName;
+        $("nEmail").value=e.email; $("nPos").value=e.position;
+        $("nRate").value = e.hourlyRate!=null ? e.hourlyRate : "";
+        $("nExpIn").value = e.expectedClockIn ? e.expectedClockIn.substring(0,5) : "";
+        $("nTarget").value = e.weeklyHoursTarget!=null ? e.weeklyHoursTarget : "";
+        $("empFormTitle").textContent = "Editar empleado: "+e.name+" "+e.lastName;
+        $("createBtn").textContent = "Guardar cambios";
+        $("cancelEditBtn").style.display = "inline-block";
+        window.scrollTo({top:0,behavior:"smooth"});
+        return; // no recargar la lista
       } else if(act==="deactivate"){
         await api("/api/employees/"+id+"/deactivate","PATCH");
       } else if(act==="activate"){
@@ -428,6 +546,162 @@
       loadEntries();
     } catch(err){ handle(err,$("entriesMsg")); }
   }
+
+  // ================= ANALISIS =================
+  // Paleta validada sobre la superficie oscura del panel (contraste >= 3:1, CVD ok).
+  const VIZ = { blue:"#3987e5", blueFill:"rgba(57,135,229,0.18)", aqua:"#199e70",
+    grid:"rgba(148,163,184,0.15)", ink:"#f1f5f9", muted:"#94a3b8" };
+  let trendChart=null, hoursChart=null;
+
+  function anRange(){
+    return { from:$("anFrom").value, to:$("anTo").value };
+  }
+  function setRangeDays(days){
+    const to = new Date(), from = new Date();
+    from.setDate(to.getDate()-(days-1));
+    $("anFrom").value = from.toISOString().substring(0,10);
+    $("anTo").value = to.toISOString().substring(0,10);
+  }
+  document.querySelectorAll(".range-btn").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll(".range-btn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    setRangeDays(parseInt(b.dataset.days,10));
+    loadAnalytics();
+  }));
+  $("anApply").addEventListener("click", ()=>{
+    document.querySelectorAll(".range-btn").forEach(x=>x.classList.remove("active"));
+    loadAnalytics();
+  });
+  setRangeDays(30);
+
+  const money = v => "$ " + Number(v).toLocaleString("es-AR",{maximumFractionDigits:0});
+
+  async function loadAnalytics(){
+    flash($("anMsg"),"");
+    const {from,to} = anRange();
+    if(!from || !to){ flash($("anMsg"),"Elegí un rango de fechas.","error"); return; }
+    const q = "?from="+from+"&to="+to;
+    try {
+      const [summary, trends, punct, overtime, absences] = await Promise.all([
+        api("/api/analytics/summary"+q),
+        api("/api/analytics/trends"+q),
+        api("/api/analytics/punctuality"+q),
+        api("/api/analytics/overtime"+q),
+        api("/api/analytics/absences"+q)
+      ]);
+      renderKpis(summary, punct, absences);
+      renderTrend(trends);
+      renderHours(summary.perEmployee);
+      renderPunctuality(punct);
+      renderOvertime(overtime);
+    } catch(err){ handle(err,$("anMsg")); }
+  }
+
+  function renderKpis(summary, punct, absences){
+    $("kpiHours").textContent = fmtHM(summary.totalWorkedMinutes)+" hs";
+    $("kpiHoursSub").textContent = summary.activeEmployees+" empleados activos · breaks: "+fmtHM(summary.totalBreakMinutes)+" hs";
+    const allRated = summary.employeesWithHourlyRate >= summary.perEmployee.filter(p=>p.workedMinutes>0).length;
+    $("kpiCost").textContent = summary.employeesWithHourlyRate>0 ? money(summary.estimatedLaborCost) : "–";
+    $("kpiCostSub").textContent = summary.employeesWithHourlyRate>0
+      ? (allRated ? "todos con valor hora" : "parcial: "+summary.employeesWithHourlyRate+" con valor hora")
+      : "cargá el valor hora en Empleados";
+    $("kpiAvg").textContent = summary.avgHoursPerEmployeePerDay.toFixed(1)+" hs";
+    const lateTotal = punct.reduce((a,p)=>a+p.lateArrivals,0);
+    const evalTotal = punct.reduce((a,p)=>a+p.daysEvaluated,0);
+    $("kpiLate").textContent = evalTotal>0 ? Math.round(lateTotal*100/evalTotal)+"%" : "–";
+    $("kpiLateSub").textContent = evalTotal>0 ? lateTotal+" de "+evalTotal+" ingresos" : "cargá la hora de entrada esperada";
+    const absTotal = absences.reduce((a,x)=>a+x.daysAbsent,0);
+    $("kpiAbs").textContent = absTotal;
+    $("kpiAbsSub").textContent = "días-persona sin fichar (local abierto)";
+  }
+
+  const baseScales = {
+    x:{ grid:{color:VIZ.grid,drawTicks:false}, ticks:{color:VIZ.muted,maxRotation:0,autoSkip:true},
+        border:{color:"rgba(148,163,184,0.35)"} },
+    y:{ grid:{color:VIZ.grid,drawTicks:false}, ticks:{color:VIZ.muted},
+        border:{display:false}, beginAtZero:true }
+  };
+  const baseOpts = {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend:{display:false},
+      tooltip:{ backgroundColor:"#0b1220", titleColor:VIZ.ink, bodyColor:VIZ.ink,
+        borderColor:"rgba(148,163,184,0.35)", borderWidth:1, padding:10, displayColors:false } }
+  };
+
+  function renderTrend(trends){
+    const labels = trends.map(t=>t.date.substring(8,10)+"/"+t.date.substring(5,7));
+    const data = trends.map(t=>t.workedHours);
+    const people = trends.map(t=>t.employeesWorked);
+    if(trendChart) trendChart.destroy();
+    trendChart = new Chart($("trendChart"), {
+      type:"line",
+      data:{ labels, datasets:[{ data, borderColor:VIZ.blue, backgroundColor:VIZ.blueFill,
+        borderWidth:2, pointRadius:0, pointHoverRadius:5, pointHoverBackgroundColor:VIZ.blue, fill:true, tension:0 }]},
+      options:{ ...baseOpts, interaction:{mode:"index",intersect:false},
+        plugins:{ ...baseOpts.plugins, tooltip:{ ...baseOpts.plugins.tooltip, callbacks:{
+          label:(ctx)=> ctx.parsed.y.toFixed(1)+" hs · "+people[ctx.dataIndex]+" persona"+(people[ctx.dataIndex]===1?"":"s") } } },
+        scales: baseScales }
+    });
+  }
+
+  function renderHours(perEmployee){
+    const rows = perEmployee.filter(p=>p.workedMinutes>0);
+    $("hoursBox").style.height = Math.max(120, 40*rows.length+40)+"px";
+    const labels = rows.map(p=>p.employeeName);
+    const data = rows.map(p=>Math.round(p.workedMinutes/60*10)/10);
+    if(hoursChart) hoursChart.destroy();
+    hoursChart = new Chart($("hoursChart"), {
+      type:"bar",
+      data:{ labels, datasets:[{ data, backgroundColor:VIZ.blue, borderRadius:4,
+        barThickness:18, borderSkipped:"start" }]},
+      options:{ ...baseOpts, indexAxis:"y",
+        plugins:{ ...baseOpts.plugins, tooltip:{ ...baseOpts.plugins.tooltip, callbacks:{
+          label:(ctx)=>{ const p=rows[ctx.dataIndex];
+            return fmtHM(p.workedMinutes)+" hs en "+p.daysWorked+" día"+(p.daysWorked===1?"":"s")
+              + (p.estimatedCost!=null ? " · "+money(p.estimatedCost) : ""); } } } },
+        scales:{ x:{...baseScales.x, beginAtZero:true}, y:{...baseScales.y, grid:{display:false}} } }
+    });
+  }
+
+  function renderPunctuality(punct){
+    const tb=$("punctTable").querySelector("tbody"); tb.innerHTML="";
+    if(!punct.length){ tb.innerHTML='<tr><td colspan="6" class="muted">Cargale a cada empleado su hora de entrada esperada (pestaña Empleados) para medir puntualidad.</td></tr>'; return; }
+    punct.forEach(p=>{
+      const warn = p.latePercentage>=25 ? ' style="color:#fcd34d;"' : '';
+      tb.innerHTML += '<tr><td>'+p.employeeName+'</td><td>'+p.expectedClockIn.substring(0,5)+'</td>'+
+        '<td>'+p.daysEvaluated+'</td><td>'+p.lateArrivals+'</td>'+
+        '<td'+warn+'>'+p.latePercentage.toFixed(0)+'%</td>'+
+        '<td>'+(p.lateArrivals>0 ? p.avgLateMinutes.toFixed(0)+" min" : "–")+'</td></tr>';
+    });
+  }
+
+  function renderOvertime(overtime){
+    const tb=$("otTable").querySelector("tbody"); tb.innerHTML="";
+    if(!overtime.length){ tb.innerHTML='<tr><td colspan="4" class="muted">Sin jornadas en el período.</td></tr>'; return; }
+    overtime.forEach(o=>{
+      tb.innerHTML += '<tr><td>'+o.employeeName+'</td>'+
+        '<td>'+(o.dailyOvertimeMinutes>0?fmtHM(o.dailyOvertimeMinutes)+" hs":"–")+'</td>'+
+        '<td>'+(o.weeklyOvertimeMinutes>0?fmtHM(o.weeklyOvertimeMinutes)+" hs":"–")+'</td>'+
+        '<td>'+o.weeklyHoursTarget+" hs</td></tr>";
+    });
+  }
+
+  async function downloadCsv(path, filename){
+    flash($("anMsg"),"");
+    const {from,to} = anRange();
+    try {
+      const res = await fetch(path+"?from="+from+"&to="+to,
+        { headers:{ "Authorization":"Bearer "+token() } });
+      if(!res.ok) throw { status:res.status, message:"No se pudo generar el CSV ("+res.status+")" };
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download=filename+"-"+from+"-a-"+to+".csv"; a.click();
+      URL.revokeObjectURL(url);
+    } catch(err){ handle(err,$("anMsg")); }
+  }
+  $("dlSummaryCsv").addEventListener("click", ()=>downloadCsv("/api/analytics/summary/csv","resumen-horas"));
+  $("dlOvertimeCsv").addEventListener("click", ()=>downloadCsv("/api/analytics/overtime/csv","horas-extra"));
 
   // Helpers
   async function safe(path){ // para endpoints que dan 404 cuando no hay datos
