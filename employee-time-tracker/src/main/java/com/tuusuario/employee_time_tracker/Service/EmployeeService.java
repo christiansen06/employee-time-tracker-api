@@ -3,6 +3,7 @@ package com.tuusuario.employee_time_tracker.Service;
 import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
+import com.tuusuario.employee_time_tracker.Exception.DuplicateResourceException;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkIntervalDTO;
@@ -56,6 +57,11 @@ public class EmployeeService {
 
     //CREATE
     public EmployeeResponseDTO createEmployee(EmployeeRequestDTO request) {
+        if (employeeRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException(
+                    "An employee with email " + request.getEmail() + " already exists.");
+        }
+
         Employee employee = Employee.builder()
                 .name(request.getName())
                 .lastName(request.getLastName())
@@ -83,6 +89,11 @@ public class EmployeeService {
     //UPDATE
     public EmployeeResponseDTO updateEmployee(Long id, EmployeeRequestDTO request) {
         Employee existingEmployee = getEmployeeEntity(id);
+
+        if (employeeRepository.existsByEmailAndIdNot(request.getEmail(), id)) {
+            throw new DuplicateResourceException(
+                    "An employee with email " + request.getEmail() + " already exists.");
+        }
 
         existingEmployee.setName(request.getName());
         existingEmployee.setLastName(request.getLastName());
