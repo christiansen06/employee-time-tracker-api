@@ -6,6 +6,7 @@ import lombok.*;
 
 @Entity
 @Table(name = "users")
+@EntityListeners(org.springframework.data.jpa.domain.support.AuditingEntityListener.class)
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
@@ -35,4 +36,12 @@ public class User {
     @OneToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "employee_id", unique = true)
     private Employee employee;
+
+    @org.springframework.data.annotation.CreatedDate
+    @Column(name = "created_at", updatable = false)
+    private java.time.LocalDateTime createdAt;
+
+    @org.springframework.data.annotation.LastModifiedDate
+    @Column(name = "updated_at")
+    private java.time.LocalDateTime updatedAt;
 }

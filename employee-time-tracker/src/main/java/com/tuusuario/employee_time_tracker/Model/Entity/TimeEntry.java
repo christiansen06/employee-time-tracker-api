@@ -10,6 +10,7 @@ import java.util.List;
 
 @Entity
 @Table(name = "time_entries")
+@EntityListeners(org.springframework.data.jpa.domain.support.AuditingEntityListener.class)
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
@@ -39,4 +40,12 @@ public class TimeEntry {
     @OneToMany(mappedBy = "timeEntry")
     @JsonManagedReference
     private List<BreakEntry> breaks;
+
+    @org.springframework.data.annotation.CreatedDate
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @org.springframework.data.annotation.LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

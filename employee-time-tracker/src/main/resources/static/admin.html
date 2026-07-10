@@ -383,7 +383,8 @@
     if(!id){ flash($("repMsg"),"Elegí un empleado.","error"); return; }
     const tb = $("entriesTable").querySelector("tbody"); tb.innerHTML="";
     $("entriesCard").style.display="block";
-    const entries = await safe("/api/analytics/employees/"+id+"/entries");
+    const page = await safe("/api/analytics/employees/"+id+"/entries");
+    const entries = Array.isArray(page) ? page : (page.content || []);
     if(!entries.length){ tb.innerHTML='<tr><td colspan="4" class="muted">Este empleado no tiene jornadas registradas.</td></tr>'; return; }
     entries.sort((a,b)=> (b.clockIn||"").localeCompare(a.clockIn||""));
     entries.forEach(e=>{

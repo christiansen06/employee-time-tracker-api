@@ -2,6 +2,8 @@ package com.tuusuario.employee_time_tracker.Repository;
 
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
@@ -11,7 +13,9 @@ import java.util.Optional;
 
 public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
     List<TimeEntry> findByClockInBetween(LocalDateTime start, LocalDateTime end);
+    Page<TimeEntry> findByClockInBetween(LocalDateTime start, LocalDateTime end, Pageable pageable);
     List<TimeEntry> findByEmployeeId(Long employeeId);
+    Page<TimeEntry> findByEmployeeId(Long employeeId, Pageable pageable);
 
     boolean existsByEmployeeIdAndStatusIn(Long employeeId, Collection<TimeEntryStatus> statuses);
 

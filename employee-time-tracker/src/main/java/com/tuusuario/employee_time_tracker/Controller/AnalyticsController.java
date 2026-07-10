@@ -4,8 +4,14 @@ import com.tuusuario.employee_time_tracker.Model.Dto.BreakSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
+import com.tuusuario.employee_time_tracker.Model.Entity.AuditLog;
 import com.tuusuario.employee_time_tracker.Service.AnalyticsService;
+import com.tuusuario.employee_time_tracker.Service.AuditLogService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -26,6 +32,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AnalyticsController {
     private final AnalyticsService analyticsService;
+    private final AuditLogService auditLogService;
+
+    /** Bitacora de cambios manuales (ediciones/borrados de jornadas), paginada. */
+    @GetMapping("/audit-log")
+    public Page<AuditLog> getAuditLog(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return auditLogService.getPage(page, size);
+    }
 
     @GetMapping("/active-time-entries")
     public List<TimeEntrySummaryDTO> getActiveTimeEntries() {
@@ -43,18 +59,28 @@ public class AnalyticsController {
     }
 
     @GetMapping("/entries")
-    public List<TimeEntrySummaryDTO> getEntriesBetweenDates(
+    public Page<TimeEntrySummaryDTO> getEntriesBetweenDates(
             @RequestParam String start,
-            @RequestParam String end
+            @RequestParam String end,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size
     ) {
-        return analyticsService.getEntriesBetweenDates(start, end);
+        return analyticsService.getEntriesBetweenDates(start, end, buildPageable(page, size));
     }
 
     @GetMapping("/employees/{employeeId}/entries")
-    public List<TimeEntrySummaryDTO> getEmployeeEntries(
-            @PathVariable Long employeeId
+    public Page<TimeEntrySummaryDTO> getEmployeeEntries(
+            @PathVariable Long employeeId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size
     ) {
-        return analyticsService.getEmployeeEntries(employeeId);
+        return analyticsService.getEmployeeEntries(employeeId, buildPageable(page, size));
+    }
+
+    /** Paginado defensivo: nunca mas de 500 filas por pagina, siempre ordenado. */
+    private Pageable buildPageable(int page, int size) {
+        return PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 500),
+                Sort.by(Sort.Direction.DESC, "clockIn"));
     }
 
     /**

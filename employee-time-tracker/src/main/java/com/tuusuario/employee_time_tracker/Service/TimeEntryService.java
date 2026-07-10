@@ -28,6 +28,7 @@ public class TimeEntryService {
     private final EmployeeRepository employeeRepository;
     private final BreakEntryRepository breakEntryRepository;
     private final CurrentEmployeeService currentEmployeeService;
+    private final AuditLogService auditLogService;
 
     /** Jornada "abierta": fichada y aun no finalizada (incluye estar en break). */
     private static final List<TimeEntryStatus> OPEN_STATUSES =
@@ -92,6 +93,11 @@ public class TimeEntryService {
                     "clockOut must be after clockIn.");
         }
 
+        auditLogService.record("TIME_ENTRY", timeEntry.getId(), "UPDATE",
+                "before: clockIn=" + timeEntry.getClockIn()
+                        + ", clockOut=" + timeEntry.getClockOut()
+                        + " | after: clockIn=" + clockIn + ", clockOut=" + clockOut);
+
         // Una jornada corregida queda siempre cerrada y deja de estar
         // marcada como auto-cerrada (el admin ya la reviso).
         timeEntry.setClockIn(clockIn);
@@ -108,6 +114,12 @@ public class TimeEntryService {
         TimeEntry timeEntry = timeEntryRepository.findById(timeEntryId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Time entry not found with id: " + timeEntryId));
+
+        auditLogService.record("TIME_ENTRY", timeEntry.getId(), "DELETE",
+                "employeeId=" + (timeEntry.getEmployee() != null
+                        ? timeEntry.getEmployee().getId() : null)
+                        + ", clockIn=" + timeEntry.getClockIn()
+                        + ", clockOut=" + timeEntry.getClockOut());
 
         if (timeEntry.getBreaks() != null && !timeEntry.getBreaks().isEmpty()) {
             breakEntryRepository.deleteAll(timeEntry.getBreaks());
