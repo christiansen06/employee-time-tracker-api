@@ -4,9 +4,15 @@ import com.tuusuario.employee_time_tracker.Model.Dto.BreakSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.AbsenceDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.AnalyticsSummaryDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.OvertimeDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.AuditLog;
 import com.tuusuario.employee_time_tracker.Service.AnalyticsService;
 import com.tuusuario.employee_time_tracker.Service.AuditLogService;
+import com.tuusuario.employee_time_tracker.Service.BusinessMetricsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +39,94 @@ import java.util.List;
 public class AnalyticsController {
     private final AnalyticsService analyticsService;
     private final AuditLogService auditLogService;
+    private final BusinessMetricsService businessMetricsService;
+
+    // ---------- Metricas de negocio (sin rango: ultimos 30 dias) ----------
+
+    /** Resumen ejecutivo: horas, breaks, headcount y costo laboral estimado. */
+    @GetMapping("/summary")
+    public AnalyticsSummaryDTO getSummary(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getSummary(from, to);
+    }
+
+    @GetMapping("/summary/csv")
+    public ResponseEntity<byte[]> getSummaryCsv(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return csvResponse(businessMetricsService.buildSummaryCsv(from, to),
+                "resumen-horas.csv");
+    }
+
+    /** Llegadas tarde vs hora esperada de entrada (empleados con hora cargada). */
+    @GetMapping("/punctuality")
+    public List<PunctualityDTO> getPunctuality(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getPunctuality(from, to);
+    }
+
+    /** Horas extra por exceso diario y por exceso del tope semanal. */
+    @GetMapping("/overtime")
+    public List<OvertimeDTO> getOvertime(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getOvertime(from, to);
+    }
+
+    @GetMapping("/overtime/csv")
+    public ResponseEntity<byte[]> getOvertimeCsv(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return csvResponse(businessMetricsService.buildOvertimeCsv(from, to),
+                "horas-extra.csv");
+    }
+
+    /** Dias operativos del local en los que cada empleado no ficho. */
+    @GetMapping("/absences")
+    public List<AbsenceDTO> getAbsences(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getAbsences(from, to);
+    }
+
+    /** Serie diaria de horas trabajadas y gente que trabajo (para graficos). */
+    @GetMapping("/trends")
+    public List<TrendPointDTO> getTrends(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getTrends(from, to);
+    }
+
+    private ResponseEntity<byte[]> csvResponse(String csv, String filename) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + filename + "\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
 
     /** Bitacora de cambios manuales (ediciones/borrados de jornadas), paginada. */
     @GetMapping("/audit-log")

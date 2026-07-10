@@ -42,6 +42,18 @@ public class Employee {
     @Column(name = "pin_hash")
     private String pinHash;
 
+    /** Valor hora para estimar costo laboral. Null = sin definir (queda fuera del calculo). */
+    @Column(name = "hourly_rate", precision = 10, scale = 2)
+    private java.math.BigDecimal hourlyRate;
+
+    /** Hora esperada de entrada para medir puntualidad. Null = no se mide. */
+    @Column(name = "expected_clock_in")
+    private java.time.LocalTime expectedClockIn;
+
+    /** Tope semanal de horas antes de contar overtime. Null = usa el default del negocio. */
+    @Column(name = "weekly_hours_target")
+    private Integer weeklyHoursTarget;
+
     @OneToMany(mappedBy = "employee")
     @JsonManagedReference
     private List<TimeEntry> timeEntries;

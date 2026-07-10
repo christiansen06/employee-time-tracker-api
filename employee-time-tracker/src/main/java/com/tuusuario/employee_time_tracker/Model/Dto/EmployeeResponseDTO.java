@@ -3,6 +3,9 @@ package com.tuusuario.employee_time_tracker.Model.Dto;
 import lombok.Builder;
 import lombok.Value;
 
+import java.math.BigDecimal;
+import java.time.LocalTime;
+
 @Value
 @Builder
 public class EmployeeResponseDTO {
@@ -13,4 +16,7 @@ public class EmployeeResponseDTO {
     String position;
     Boolean active;
     boolean hasPin;
+    BigDecimal hourlyRate;
+    LocalTime expectedClockIn;
+    Integer weeklyHoursTarget;
 }
