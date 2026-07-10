@@ -138,25 +138,14 @@ public class EmployeeService {
     //Horas Semanales
     public WorkedHoursResponseDTO getWeeklyWorkedHours(Long employeeId) {
 
-        Employee employee = employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Employee not found with id: " + employeeId));
+        // Reusa el desglose semanal (mismo criterio de semana Lun-Dom en
+        // todos lados, e incluye fichadas del lunes 00:00 exacto).
+        WeeklyHoursDetailDTO detail = getWeeklyDetail(employeeId);
 
-        LocalDateTime startOfWeek = LocalDate.now()
-                .with(DayOfWeek.MONDAY)
-                .atStartOfDay();
-
-        List<TimeEntry> weeklyEntries = employee.getTimeEntries()
-                .stream()
-                .filter(entry -> entry.getStatus() == TimeEntryStatus.FINISHED)
-                .filter(entry -> entry.getClockIn() != null)
-                .filter(entry -> entry.getClockOut() != null)
-                .filter(entry -> entry.getClockIn().isAfter(startOfWeek))
-                .toList();
-
-        long totalWorkedMinutes = calculateWorkedMinutes(weeklyEntries);
-
+        long totalWorkedMinutes = detail.getTotalWorkedMinutes();
         long overtimeMinutes = Math.max(0, totalWorkedMinutes - (40 * 60));
+
+        Employee employee = getEmployeeEntity(employeeId);
 
         return WorkedHoursResponseDTO.builder()
                 .employeeId(employee.getId())

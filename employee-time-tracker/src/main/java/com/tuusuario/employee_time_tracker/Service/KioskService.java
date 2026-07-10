@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Operaciones del dispositivo compartido del local (kiosco).
@@ -75,18 +76,45 @@ public class KioskService {
         return employeeService.getWeeklyDetail(employeeId);
     }
 
+    // ---------- Verificacion de PIN con freno anti fuerza-bruta ----------
+
+    private static final int MAX_PIN_ATTEMPTS = 5;
+    private static final long PIN_LOCK_MS = 60_000;
+
+    /** employeeId -> [intentos fallidos, bloqueado hasta (epoch ms)] */
+    private final ConcurrentHashMap<Long, long[]> pinAttempts = new ConcurrentHashMap<>();
+
     private void verifyPin(Long employeeId, String pin) {
         Employee employee = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Employee not found with id: " + employeeId));
+
+        if (!Boolean.TRUE.equals(employee.getActive())) {
+            throw new IllegalStateException("This employee is inactive.");
+        }
 
         if (employee.getPinHash() == null) {
             throw new IllegalStateException(
                     "This employee has no PIN configured. Ask the admin to set one.");
         }
 
+        long now = System.currentTimeMillis();
+        long[] state = pinAttempts.get(employeeId);
+        if (state != null && state[1] > now) {
+            throw new IllegalStateException(
+                    "Demasiados intentos fallidos. Espera un minuto y volve a intentar.");
+        }
+
         if (!passwordEncoder.matches(pin, employee.getPinHash())) {
+            pinAttempts.compute(employeeId, (id, prev) -> {
+                long fails = (prev == null ? 0 : prev[0]) + 1;
+                long lockUntil = fails >= MAX_PIN_ATTEMPTS
+                        ? System.currentTimeMillis() + PIN_LOCK_MS : 0;
+                return new long[]{ fails >= MAX_PIN_ATTEMPTS ? 0 : fails, lockUntil };
+            });
             throw new BadCredentialsException("Invalid PIN.");
         }
+
+        pinAttempts.remove(employeeId);
     }
 }

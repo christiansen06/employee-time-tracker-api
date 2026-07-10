@@ -24,4 +24,6 @@ public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
 
     List<TimeEntry> findByStatusInAndClockInBefore(
             Collection<TimeEntryStatus> statuses, LocalDateTime before);
+
+    List<TimeEntry> findByStatusIn(Collection<TimeEntryStatus> statuses);
 }

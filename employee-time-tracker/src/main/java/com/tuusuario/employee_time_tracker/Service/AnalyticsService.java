@@ -35,8 +35,9 @@ public class AnalyticsService {
     private final EmployeeService employeeService;
 
     public List<TimeEntrySummaryDTO> getActiveTimeEntries() {
-        List<TimeEntry> activeEntries =
-                timeEntryRepository.findByStatus(TimeEntryStatus.CLOCKED_IN);
+        // Incluye tambien a los que estan en break: su jornada sigue abierta.
+        List<TimeEntry> activeEntries = timeEntryRepository.findByStatusIn(
+                List.of(TimeEntryStatus.CLOCKED_IN, TimeEntryStatus.ON_BREAK));
 
         validateNotEmpty(
                 activeEntries,
