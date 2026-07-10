@@ -5,6 +5,7 @@ import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.WorkIntervalDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.BreakEntry;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
@@ -19,6 +20,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -189,24 +191,44 @@ public class EmployeeService {
         LocalDateTime from = weekStart.atStartOfDay();
         LocalDateTime to = weekStart.plusDays(7).atStartOfDay();
 
-        Map<LocalDate, Long> minutesPerDay = new HashMap<>();
+        Map<LocalDate, List<TimeEntry>> entriesPerDay = new HashMap<>();
 
         if (employee.getTimeEntries() != null) {
             employee.getTimeEntries().stream()
                     .filter(e -> e.getStatus() == TimeEntryStatus.FINISHED)
                     .filter(e -> e.getClockIn() != null && e.getClockOut() != null)
                     .filter(e -> !e.getClockIn().isBefore(from) && e.getClockIn().isBefore(to))
-                    .forEach(e -> minutesPerDay.merge(
-                            e.getClockIn().toLocalDate(), entryNetMinutes(e), Long::sum));
+                    .forEach(e -> entriesPerDay
+                            .computeIfAbsent(e.getClockIn().toLocalDate(), d -> new ArrayList<>())
+                            .add(e));
         }
 
+        DateTimeFormatter hm = DateTimeFormatter.ofPattern("HH:mm");
         List<DailyHoursDTO> days = new ArrayList<>();
         long total = 0;
+
         for (int i = 0; i < 7; i++) {
             LocalDate day = weekStart.plusDays(i);
-            long minutes = minutesPerDay.getOrDefault(day, 0L);
+            List<TimeEntry> dayEntries = new ArrayList<>(entriesPerDay.getOrDefault(day, List.of()));
+            dayEntries.sort(java.util.Comparator.comparing(TimeEntry::getClockIn));
+
+            long minutes = 0;
+            List<WorkIntervalDTO> intervals = new ArrayList<>();
+            for (TimeEntry e : dayEntries) {
+                minutes += entryNetMinutes(e);
+                intervals.add(WorkIntervalDTO.builder()
+                        .clockIn(e.getClockIn().format(hm))
+                        .clockOut(e.getClockOut().format(hm))
+                        .breakMinutes(entryBreakMinutes(e))
+                        .build());
+            }
+
             total += minutes;
-            days.add(DailyHoursDTO.builder().date(day).workedMinutes(minutes).build());
+            days.add(DailyHoursDTO.builder()
+                    .date(day)
+                    .workedMinutes(minutes)
+                    .intervals(intervals)
+                    .build());
         }
 
         return WeeklyHoursDetailDTO.builder()
@@ -223,14 +245,18 @@ public class EmployeeService {
     /** Minutos netos de una jornada: duracion menos breaks. */
     private long entryNetMinutes(TimeEntry entry) {
         long worked = Duration.between(entry.getClockIn(), entry.getClockOut()).toMinutes();
-        long breaks = 0;
-        if (entry.getBreaks() != null) {
-            breaks = entry.getBreaks().stream()
-                    .filter(b -> b.getDurationMinutes() != null)
-                    .mapToLong(BreakEntry::getDurationMinutes)
-                    .sum();
+        return worked - entryBreakMinutes(entry);
+    }
+
+    /** Total de minutos de break de una jornada. */
+    private long entryBreakMinutes(TimeEntry entry) {
+        if (entry.getBreaks() == null) {
+            return 0;
         }
-        return worked - breaks;
+        return entry.getBreaks().stream()
+                .filter(b -> b.getDurationMinutes() != null)
+                .mapToLong(BreakEntry::getDurationMinutes)
+                .sum();
     }
 
     //Metodos Auxiliares

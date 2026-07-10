@@ -37,6 +37,8 @@ public class SecurityConfig {
                                 "/admin",
                                 "/admin.html",
                                 "/favicon.ico",
+                                "/icon.svg",
+                                "/manifest.json",
                                 "/assets/**",
                                 "/api/auth/login",
                                 "/api/health",

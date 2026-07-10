@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BuBa · Fichaje</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#23DFF1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BuBa">
   <style>
     :root {
       --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #f1f5f9;
@@ -17,10 +24,10 @@
       color: var(--text); min-height: 100vh;
       display: flex; align-items: center; justify-content: center; padding: 16px;
     }
-    h1 {
-      background: linear-gradient(90deg, var(--turq), var(--pink));
-      -webkit-background-clip: text; background-clip: text; color: transparent;
-    }
+    /* Logo: insignia con gradiente + texto blanco solido (legible sobre cualquier fondo) */
+    .logo { width: 34px; height: 34px; border-radius: 10px; vertical-align: middle; }
+    h1 { color: var(--text); }
+    .brand { display: flex; align-items: center; gap: 10px; }
     .app {
       width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--border);
       border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.4);
@@ -75,6 +82,16 @@
     .wk .dn { font-size: 11px; color: var(--muted); }
     .wk .dh { font-size: 13px; font-weight: 700; margin-top: 4px; }
     .wk .d.on .dh { color: var(--turq); }
+
+    /* Detalle de tramos entrada-salida por dia */
+    .ivrow {
+      display: flex; justify-content: space-between; gap: 8px;
+      padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 14px;
+    }
+    .ivrow:last-child { border-bottom: none; }
+    .ivrow .ivday { color: var(--muted); }
+    .ivrow .ivtime { font-weight: 600; }
+    .ivrow .ivbreak { color: var(--amber); font-size: 12px; }
     .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .keypad button { background: #0b1220; border: 1px solid var(--border); color: var(--text); font-size: 24px; padding: 20px; }
 
@@ -102,7 +119,7 @@
 
     <!-- SETUP DEL DISPOSITIVO -->
     <section id="setupView">
-      <div class="brand"><h1>BuBa</h1></div>
+      <div class="brand"><img class="logo" src="/icon.svg" alt=""><h1>BuBa</h1></div>
       <p class="subtitle">Configurar este dispositivo (una sola vez)</p>
       <form id="setupForm">
         <label for="kUser">Usuario del kiosco</label>
@@ -117,7 +134,7 @@
     <!-- GRILLA DE EMPLEADOS -->
     <section id="gridView" class="hidden">
       <div class="topbar">
-        <div class="brand"><h1 style="font-size:22px;">BuBa</h1><span class="clock" id="clock"></span></div>
+        <div class="brand"><img class="logo" src="/icon.svg" alt=""><h1 style="font-size:22px;">BuBa</h1><span class="clock" id="clock"></span></div>
         <button class="btn-ghost" id="resetDeviceBtn">Dispositivo</button>
       </div>
       <p class="subtitle">Tocá tu nombre para fichar</p>
@@ -155,6 +172,7 @@
       <div id="aHoursBox" style="display:none;margin-top:12px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--border);">
         <div class="meta" id="aHoursMeta" style="margin-top:0;"></div>
         <div class="wk" id="aHoursGrid"></div>
+        <div id="aHoursDetail" style="margin-top:10px;"></div>
         <div style="text-align:center;font-size:24px;font-weight:700;margin-top:10px;">Total: <span id="aHoursValue">–</span></div>
       </div>
       <div id="actMsg" class="msg error"></div>
@@ -335,15 +353,23 @@
       $("actMsg").style.display = "none";
       try {
         const h = await api("/api/kiosk/worked-hours", "POST", { employeeId: current.id, pin: current.pin });
-        let cells = "";
+        let cells = "", detail = "";
         h.days.forEach((d, i) => {
           const dayNum = parseInt(d.date.split("-")[2], 10);
           const has = d.workedMinutes > 0;
           cells += '<div class="d' + (has ? ' on' : '') + '">' +
                    '<div class="dn">' + DAY_NAMES[i] + ' ' + dayNum + '</div>' +
                    '<div class="dh">' + (has ? fmtHM(d.workedMinutes) : '–') + '</div></div>';
+          (d.intervals || []).forEach(iv => {
+            detail += '<div class="ivrow">' +
+                      '<span class="ivday">' + DAY_NAMES[i] + ' ' + dayNum + '</span>' +
+                      '<span class="ivtime">' + iv.clockIn + ' – ' + iv.clockOut +
+                      (iv.breakMinutes > 0 ? ' <span class="ivbreak">(break ' + fmtHM(iv.breakMinutes) + ')</span>' : '') +
+                      '</span></div>';
+          });
         });
         $("aHoursGrid").innerHTML = cells;
+        $("aHoursDetail").innerHTML = detail;
         $("aHoursValue").textContent = fmtHM(h.totalWorkedMinutes) + " h";
         $("aHoursMeta").textContent = "Semana del " + h.weekStart.split("-").reverse().slice(0,2).join("/") +
                                       " · neto de breaks";
