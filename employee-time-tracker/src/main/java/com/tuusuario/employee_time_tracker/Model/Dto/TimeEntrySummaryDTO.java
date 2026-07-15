@@ -16,4 +16,6 @@ public class TimeEntrySummaryDTO {
     private LocalDateTime clockOut;
     private TimeEntryStatus status;
     private Boolean autoClosed;
+    /** true si la jornada se paga al doble (feriado). */
+    private Boolean paidDouble;
 }

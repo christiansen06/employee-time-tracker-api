@@ -7,6 +7,7 @@ import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.AbsenceDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.AnalyticsSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.OvertimeDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.PayrollReportDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.AuditLog;
@@ -63,6 +64,28 @@ public class AnalyticsController {
     ) {
         return csvResponse(businessMetricsService.buildSummaryCsv(from, to),
                 "resumen-horas.csv");
+    }
+
+    /** Liquidacion: cuanto pagarle a cada empleado (jornadas dobles cuentan x2). */
+    @GetMapping("/payroll")
+    public PayrollReportDTO getPayroll(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return businessMetricsService.getPayroll(from, to);
+    }
+
+    @GetMapping("/payroll/csv")
+    public ResponseEntity<byte[]> getPayrollCsv(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return csvResponse(businessMetricsService.buildPayrollCsv(from, to),
+                "liquidacion.csv");
     }
 
     /** Llegadas tarde vs hora esperada de entrada (empleados con hora cargada). */

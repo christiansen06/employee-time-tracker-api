@@ -186,16 +186,45 @@
         </div>
         <div style="overflow-x:auto;margin-top:14px;">
           <table id="entriesTable">
-            <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Horas</th><th></th></tr></thead>
+            <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Horas</th><th title="Se paga doble (feriado)">Doble</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
+        </div>
+        <div id="weekPaySummary" style="margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:12px;display:none;">
+          <div class="row" style="justify-content:space-between;align-items:center;">
+            <div>
+              <div class="muted" style="font-size:12px;">A pagar esta semana</div>
+              <div class="hours-big" id="weekPayAmount">–</div>
+            </div>
+            <div class="muted" id="weekPayDetail" style="text-align:right;font-size:13px;"></div>
+          </div>
         </div>
         <p class="muted" style="font-size:12px;margin-bottom:0;">
           Días vacíos: cargá entrada y salida y tocá <strong>Agregar</strong> para registrar la jornada
           (ej.: el empleado trabajó pero no fichó). El <strong>+</strong> agrega un segundo turno en el mismo día.
+          <strong>Doble</strong>: marcá la casilla si ese día se paga doble (feriado); impacta al instante en la liquidación.
           Todo cambio queda en la bitácora de auditoría.
         </p>
         <div id="entriesMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Liquidación <span class="muted" style="font-size:13px;">(cuánto pagarle a cada empleado)</span></h3>
+        <label>Período</label>
+        <div class="row">
+          <input type="date" id="payFrom" style="width:auto;">
+          <span class="muted">→</span>
+          <input type="date" id="payTo" style="width:auto;">
+          <button class="btn-primary" id="payShow">Calcular</button>
+          <button class="btn-green" id="payCsv">⬇ CSV</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:14px;">
+          <table id="payTable" style="display:none;">
+            <thead><tr><th>Empleado</th><th>Horas</th><th>Dobles</th><th>A pagar</th><th>Valor hora</th><th>Total</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="payMsg" class="msg"></div>
       </div>
     </div>
 
@@ -324,7 +353,7 @@
     t.classList.add("active");
     ["empleados","ahora","reportes","analisis"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
     if (t.dataset.tab==="ahora") loadNow();
-    if (t.dataset.tab==="reportes") loadEmpOptions();
+    if (t.dataset.tab==="reportes"){ loadEmpOptions(); setDefaultPayRange(); }
     if (t.dataset.tab==="analisis") loadAnalytics();
   }));
 
@@ -556,6 +585,12 @@
     let badge = "";
     if (e && e.status !== "FINISHED") badge = ' <span class="badge warn">Abierta</span>';
     if (e && e.autoClosed) badge = ' <span class="badge warn" title="Cerrada automáticamente: corregí la salida real">⚠ Auto</span>';
+    const esDoble = e && e.paidDouble === true;
+    if (esDoble) badge += ' <span class="badge warn" title="Este día se paga doble">×2</span>';
+    const doble = e
+      ? '<input type="checkbox" data-double="'+e.timeEntryId+'" '+(esDoble?"checked":"")+
+        ' title="Se paga doble (feriado)" style="width:18px;height:18px;accent-color:var(--amber);cursor:pointer;">'
+      : '';
     const btn = e
       ? '<button class="btn-green" data-save="'+e.timeEntryId+'" data-day="'+dayIso+'" data-key="'+key+'">Guardar</button>'+
         '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'
@@ -565,6 +600,7 @@
       '<td><input type="time" id="tin-'+key+'" value="'+inVal+'" style="width:110px;"></td>'+
       '<td><input type="time" id="tout-'+key+'" value="'+outVal+'" style="width:110px;"></td>'+
       '<td>'+horas+badge+'</td>'+
+      '<td>'+doble+'</td>'+
       '<td><div class="row actions">'+btn+'</div></td>';
     return tr;
   }
@@ -598,12 +634,45 @@
       }
     }
     bindEntryButtons(tb);
+    renderWeekPay(from, to);
+  }
+
+  /** Resumen de pago de la semana del empleado elegido, al pie del editor. */
+  async function renderWeekPay(from, to){
+    const box = $("weekPaySummary");
+    const rep = await safe("/api/analytics/payroll?from="+from+"&to="+to);
+    const row = (rep.rows||[]).find(r=>String(r.employeeId)===String(entriesEmpId));
+    box.style.display = "block";
+    if (!row){
+      $("weekPayAmount").textContent = "–";
+      $("weekPayDetail").textContent = "Sin jornadas cerradas esta semana.";
+      return;
+    }
+    let detail = fmtHM(row.workedMinutes)+" hs trabajadas";
+    if (row.doubleMinutes>0) detail += " (+"+fmtHM(row.doubleMinutes)+" hs dobles ×2)";
+    detail += " = "+fmtHM(row.payableMinutes)+" hs a pagar";
+    if (row.hourlyRate!=null){
+      $("weekPayAmount").textContent = money(row.amount);
+      detail += " × "+money(row.hourlyRate)+"/h";
+    } else {
+      $("weekPayAmount").textContent = fmtHM(row.payableMinutes)+" hs";
+      detail += " · cargá el valor hora en Empleados para ver el monto";
+    }
+    $("weekPayDetail").textContent = detail;
   }
 
   function bindEntryButtons(tb){
     tb.querySelectorAll("button[data-save]").forEach(b=>b.addEventListener("click",()=>saveEntry(b.dataset.save, b.dataset.day, b.dataset.key)));
     tb.querySelectorAll("button[data-del]").forEach(b=>b.addEventListener("click",()=>deleteEntry(b.dataset.del)));
     tb.querySelectorAll("button[data-create]").forEach(b=>b.addEventListener("click",()=>createEntry(b.dataset.create, b.dataset.key)));
+    tb.querySelectorAll("input[data-double]").forEach(c=>c.addEventListener("change", async ()=>{
+      flash($("entriesMsg"),"");
+      try {
+        await api("/api/time-entries/"+c.dataset.double+"/paid-double","PATCH",{ paidDouble: c.checked });
+        flash($("entriesMsg"), c.checked ? "Día marcado como pago doble (feriado)." : "Pago doble quitado.", "ok");
+        loadEntries();
+      } catch(err){ c.checked = !c.checked; handle(err,$("entriesMsg")); }
+    }));
     tb.querySelectorAll("button[data-add]").forEach(b=>b.addEventListener("click",()=>{
       const row = b.closest("tr");
       const extra = entryRow(b.dataset.add, '<span class="muted">"</span>', null);
@@ -655,6 +724,57 @@
       loadEntries();
     } catch(err){ handle(err,$("entriesMsg")); }
   }
+
+  // LIQUIDACION (todos los empleados)
+  function setDefaultPayRange(){
+    if($("payFrom").value && $("payTo").value) return;
+    const mon = mondayOf(new Date().toISOString().substring(0,10));
+    const sun = new Date(mon); sun.setDate(sun.getDate()+6);
+    $("payFrom").value = isoDate(mon);
+    $("payTo").value = isoDate(sun);
+  }
+
+  $("payShow").addEventListener("click", loadPayroll);
+  async function loadPayroll(){
+    flash($("payMsg"),"");
+    const from=$("payFrom").value, to=$("payTo").value;
+    if(!from||!to){ flash($("payMsg"),"Elegí el período.","error"); return; }
+    try {
+      const rep = await api("/api/analytics/payroll?from="+from+"&to="+to);
+      const table=$("payTable"); const tb=table.querySelector("tbody"); tb.innerHTML="";
+      if(!rep.rows.length){ table.style.display="none"; flash($("payMsg"),"Sin jornadas cerradas en el período.","error"); return; }
+      rep.rows.forEach(r=>{
+        tb.innerHTML += '<tr><td>'+r.employeeName+'</td>'+
+          '<td>'+fmtHM(r.workedMinutes)+'</td>'+
+          '<td>'+(r.doubleMinutes>0?fmtHM(r.doubleMinutes)+' <span class="badge warn">×2</span>':'<span class="muted">–</span>')+'</td>'+
+          '<td><strong>'+fmtHM(r.payableMinutes)+'</strong></td>'+
+          '<td>'+(r.hourlyRate!=null?money(r.hourlyRate):'<span class="badge warn">cargar</span>')+'</td>'+
+          '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>':'<span class="muted">–</span>')+'</td></tr>';
+      });
+      tb.innerHTML += '<tr><td><strong>TOTAL</strong></td><td></td><td></td>'+
+        '<td><strong>'+fmtHM(rep.totalPayableMinutes)+'</strong></td><td></td>'+
+        '<td><strong>'+money(rep.totalAmount)+'</strong></td></tr>';
+      table.style.display="table";
+      if(rep.employeesWithoutRate>0)
+        flash($("payMsg"), rep.employeesWithoutRate+" empleado(s) sin valor hora cargado: su monto no entra en el TOTAL.","error");
+    } catch(err){ handle(err,$("payMsg")); }
+  }
+
+  $("payCsv").addEventListener("click", async ()=>{
+    flash($("payMsg"),"");
+    const from=$("payFrom").value, to=$("payTo").value;
+    if(!from||!to){ flash($("payMsg"),"Elegí el período.","error"); return; }
+    try {
+      const res = await fetch("/api/analytics/payroll/csv?from="+from+"&to="+to,
+        { headers:{ "Authorization":"Bearer "+token() } });
+      if(!res.ok) throw { status:res.status, message:"No se pudo generar el CSV ("+res.status+")" };
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download="liquidacion-"+from+"-a-"+to+".csv"; a.click();
+      URL.revokeObjectURL(url);
+    } catch(err){ handle(err,$("payMsg")); }
+  });
 
   // ================= ANALISIS =================
   // Paleta validada sobre la superficie oscura del panel (contraste >= 3:1, CVD ok).

@@ -32,6 +32,10 @@ public class TimeEntry {
     @Column(name = "auto_closed")
     private Boolean autoClosed;
 
+    /** true si la jornada se paga al doble (feriado). Null = false. */
+    @Column(name = "paid_double")
+    private Boolean paidDouble;
+
     @ManyToOne
     @JoinColumn(name = "employee_id")
     @JsonBackReference

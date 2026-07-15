@@ -171,6 +171,64 @@ class BusinessMetricsServiceTest {
     }
 
     @Test
+    void payrollDoublesHolidayEntriesAndComputesAmount() {
+        TimeEntry feriado = shift(ana, monday.plusDays(3), 9, 17); // 8 hs
+        feriado.setPaidDouble(true);
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
+                shift(ana, monday, 9, 17),   // 8 hs normales
+                feriado,                     // 8 hs dobles
+                shift(beto, monday, 10, 14)  // 4 hs, sin tarifa
+        ));
+
+        var report = service.getPayroll(monday, monday.plusDays(6));
+
+        var anaRow = report.getRows().stream()
+                .filter(r -> r.getEmployeeId().equals(1L)).findFirst().orElseThrow();
+        assertThat(anaRow.getWorkedMinutes()).isEqualTo(16 * 60);
+        assertThat(anaRow.getDoubleMinutes()).isEqualTo(8 * 60);
+        assertThat(anaRow.getPayableMinutes()).isEqualTo(24 * 60);
+        // 24 hs a pagar x $100
+        assertThat(anaRow.getAmount()).isEqualByComparingTo(new BigDecimal("2400.00"));
+
+        var betoRow = report.getRows().stream()
+                .filter(r -> r.getEmployeeId().equals(2L)).findFirst().orElseThrow();
+        assertThat(betoRow.getAmount()).isNull();
+
+        assertThat(report.getEmployeesWithoutRate()).isEqualTo(1);
+        assertThat(report.getTotalPayableMinutes()).isEqualTo(28 * 60);
+        assertThat(report.getTotalAmount()).isEqualByComparingTo(new BigDecimal("2400.00"));
+    }
+
+    @Test
+    void payrollCsvContainsTotalsRow() {
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
+                shift(ana, monday, 9, 17)
+        ));
+
+        String csv = service.buildPayrollCsv(monday, monday.plusDays(6));
+
+        assertThat(csv).contains("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Total");
+        assertThat(csv).contains("Ana Lopez");
+        assertThat(csv).contains("TOTAL;;;8:00;;800.00");
+    }
+
+    @Test
+    void summaryCostCountsDoubleEntriesTwice() {
+        TimeEntry feriado = shift(ana, monday, 9, 17); // 8 hs dobles
+        feriado.setPaidDouble(true);
+        when(timeEntryRepository.findByClockInBetween(any(), any()))
+                .thenReturn(List.of(feriado));
+        when(employeeRepository.findByActiveTrue()).thenReturn(List.of(ana));
+
+        AnalyticsSummaryDTO summary = service.getSummary(monday, monday.plusDays(6));
+
+        // Trabajo 8 hs pero cuestan 16 hs x $100
+        assertThat(summary.getTotalWorkedMinutes()).isEqualTo(8 * 60);
+        assertThat(summary.getEstimatedLaborCost())
+                .isEqualByComparingTo(new BigDecimal("1600.00"));
+    }
+
+    @Test
     void rangeValidationRejectsInvertedAndHugeRanges() {
         lenient().when(timeEntryRepository.findByClockInBetween(any(), any()))
                 .thenReturn(List.of());

@@ -149,6 +149,28 @@ public class TimeEntryService {
         return mapToDTO(timeEntryRepository.save(timeEntry));
     }
 
+    /**
+     * Marca o desmarca una jornada como pagada al doble (feriado).
+     * Afecta la liquidacion: sus minutos cuentan x2. Queda auditado.
+     */
+    public TimeEntrySummaryDTO setPaidDouble(Long timeEntryId, boolean paidDouble) {
+
+        TimeEntry timeEntry = timeEntryRepository.findById(timeEntryId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Time entry not found with id: " + timeEntryId));
+
+        boolean previous = Boolean.TRUE.equals(timeEntry.getPaidDouble());
+
+        if (previous != paidDouble) {
+            auditLogService.record("TIME_ENTRY", timeEntryId, "UPDATE",
+                    "paidDouble: " + previous + " -> " + paidDouble);
+            timeEntry.setPaidDouble(paidDouble);
+            timeEntry = timeEntryRepository.save(timeEntry);
+        }
+
+        return mapToDTO(timeEntry);
+    }
+
     /** Elimina una jornada (y sus breaks). Para borrar dias de prueba o errores. */
     public void deleteEntry(Long timeEntryId) {
 
@@ -265,6 +287,7 @@ public class TimeEntryService {
                 .clockOut(timeEntry.getClockOut())
                 .status(timeEntry.getStatus())
                 .autoClosed(timeEntry.getAutoClosed())
+                .paidDouble(timeEntry.getPaidDouble())
                 .build();
     }
 }
