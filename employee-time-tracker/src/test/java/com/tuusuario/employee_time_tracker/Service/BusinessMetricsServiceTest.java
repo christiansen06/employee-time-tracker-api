@@ -27,6 +27,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +36,7 @@ class BusinessMetricsServiceTest {
 
     @Mock private TimeEntryRepository timeEntryRepository;
     @Mock private EmployeeRepository employeeRepository;
+    @Mock private com.tuusuario.employee_time_tracker.Repository.PaymentRepository paymentRepository;
 
     @InjectMocks private BusinessMetricsService service;
 
@@ -197,6 +199,27 @@ class BusinessMetricsServiceTest {
         assertThat(report.getEmployeesWithoutRate()).isEqualTo(1);
         assertThat(report.getTotalPayableMinutes()).isEqualTo(28 * 60);
         assertThat(report.getTotalAmount()).isEqualByComparingTo(new BigDecimal("2400.00"));
+    }
+
+    @Test
+    void whatsappMessageContainsDailyBreakdownAndTotal() {
+        TimeEntry feriado = shift(ana, monday.plusDays(3), 9, 17); // jueves, 8 hs
+        feriado.setPaidDouble(true);
+        when(employeeRepository.findById(1L)).thenReturn(java.util.Optional.of(ana));
+        when(timeEntryRepository.findByEmployeeIdAndClockInBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(shift(ana, monday, 9, 17), feriado));
+
+        String msg = service.buildEmployeeMessage(1L, monday, monday.plusDays(6));
+
+        assertThat(msg).contains("Ana Lopez");
+        assertThat(msg).contains("Lun 01/06 · 09:00–17:00 · 8:00 hs");
+        assertThat(msg).contains("Jue 04/06");
+        assertThat(msg).contains("*FERIADO ×2*");
+        assertThat(msg).contains("Horas trabajadas: 16:00 hs");
+        assertThat(msg).contains("Horas dobles (feriado ×2): 8:00 hs");
+        assertThat(msg).contains("Horas a pagar: 24:00 hs");
+        // 24 hs x $100 = $2.400
+        assertThat(msg).contains("*TOTAL: $2.400*");
     }
 
     @Test

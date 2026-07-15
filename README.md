@@ -25,6 +25,10 @@ mañana.
   configurable) y horas extra (exceso diario y semanal).
 - **Liquidación**: cuánto pagarle a cada empleado en el período (horas netas ×
   valor hora); las jornadas marcadas como **dobles** (feriados) cuentan ×2.
+- **Pagos**: marcar el período como pagado lo congela (las jornadas no se
+  editan hasta reabrir el pago, todo auditado) y queda en el historial;
+  mensaje de desglose diario listo para **WhatsApp** por empleado.
+- Alertas de jornadas auto-cerradas pendientes de corrección (bloquean el pago).
 - Exportes CSV compatibles con Excel (separador `;`, UTF-8 con BOM).
 
 **Base técnica**
@@ -123,7 +127,8 @@ Documentación completa en Swagger (`/swagger-ui.html`).
 | Fichaje propio (EMPLOYEE) | `/api/time-entries/me/*`, `/api/breaks/me/*` |
 | Jornadas (ADMIN) | ABM: `POST /api/time-entries` (alta manual de jornada olvidada, sin solapamientos), `PUT/DELETE /{id}`, `PATCH /{id}/paid-double` (feriado ×2) — todo queda en `audit_log` |
 | Reportes (ADMIN) | `weekly-report(+/csv)`, `entries` y `employees/{id}/entries` (paginados) |
-| Analytics (ADMIN) | `summary(+/csv)`, `payroll(+/csv)` (liquidación), `punctuality`, `overtime(+/csv)`, `absences`, `trends`, `audit-log` |
+| Analytics (ADMIN) | `summary(+/csv)`, `payroll(+/csv)` (liquidación), `payroll/{id}/message` (WhatsApp), `pending-fixes`, `punctuality`, `overtime(+/csv)`, `absences`, `trends`, `audit-log` |
+| Pagos (ADMIN) | `POST /api/payments` (cierra el período), `GET` (historial), `DELETE /{id}` (reabre) |
 
 Convenciones: listas vacías devuelven `200 []` (no 404); los listados grandes
 se paginan (`?page=&size=`, máx. 500); errores con cuerpo JSON uniforme.

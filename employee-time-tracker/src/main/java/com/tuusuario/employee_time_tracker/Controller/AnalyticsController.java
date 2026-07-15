@@ -88,6 +88,26 @@ public class AnalyticsController {
                 "liquidacion.csv");
     }
 
+    /** Mensaje de liquidacion (desglose diario) listo para copiar/WhatsApp. */
+    @GetMapping("/payroll/{employeeId}/message")
+    public ResponseEntity<String> getPayrollMessage(
+            @PathVariable Long employeeId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "plain", StandardCharsets.UTF_8))
+                .body(businessMetricsService.buildEmployeeMessage(employeeId, from, to));
+    }
+
+    /** Jornadas auto-cerradas pendientes de correccion (avisar antes de liquidar). */
+    @GetMapping("/pending-fixes")
+    public List<TimeEntrySummaryDTO> getPendingFixes() {
+        return analyticsService.getPendingFixes();
+    }
+
     /** Llegadas tarde vs hora esperada de entrada (empleados con hora cargada). */
     @GetMapping("/punctuality")
     public List<PunctualityDTO> getPunctuality(

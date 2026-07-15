@@ -8,9 +8,12 @@ import com.tuusuario.employee_time_tracker.Model.Dto.PayrollReportDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PayrollRowDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
+import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
+import com.tuusuario.employee_time_tracker.Model.Entity.Payment;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import com.tuusuario.employee_time_tracker.Util.WorkTimeCalculator;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +46,7 @@ public class BusinessMetricsService {
 
     private final TimeEntryRepository timeEntryRepository;
     private final EmployeeRepository employeeRepository;
+    private final PaymentRepository paymentRepository;
 
     /** Minutos de gracia antes de contar una llegada como tarde. */
     @Value("${app.analytics.late-tolerance-minutes:10}")
@@ -149,45 +153,20 @@ public class BusinessMetricsService {
                 .collect(Collectors.groupingBy(e -> e.getEmployee().getId()));
 
         List<PayrollRowDTO> rows = new ArrayList<>();
-        long totalPayable = 0;
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        int withoutRate = 0;
-
         for (List<TimeEntry> own : byEmployee.values()) {
-            Employee emp = own.get(0).getEmployee();
-
-            long worked = own.stream()
-                    .mapToLong(WorkTimeCalculator::netMinutes).sum();
-            long doubles = own.stream()
-                    .filter(e -> Boolean.TRUE.equals(e.getPaidDouble()))
-                    .mapToLong(WorkTimeCalculator::netMinutes).sum();
-            long payable = worked + doubles; // las dobles suman una vez mas
-
-            BigDecimal amount = null;
-            if (emp.getHourlyRate() != null) {
-                amount = costOf(payable, emp.getHourlyRate());
-                totalAmount = totalAmount.add(amount);
-            } else {
-                withoutRate++;
-            }
-
-            totalPayable += payable;
-
-            rows.add(PayrollRowDTO.builder()
-                    .employeeId(emp.getId())
-                    .employeeName(fullName(emp))
-                    .workedMinutes(worked)
-                    .doubleMinutes(doubles)
-                    .payableMinutes(payable)
-                    .workedHours(round2(worked / 60.0))
-                    .doubleHours(round2(doubles / 60.0))
-                    .payableHours(round2(payable / 60.0))
-                    .hourlyRate(emp.getHourlyRate())
-                    .amount(amount)
-                    .build());
+            rows.add(buildPayrollRow(own.get(0).getEmployee(), own, range));
         }
 
         rows.sort(Comparator.comparingLong(PayrollRowDTO::getPayableMinutes).reversed());
+
+        long totalPayable = rows.stream()
+                .mapToLong(PayrollRowDTO::getPayableMinutes).sum();
+        BigDecimal totalAmount = rows.stream()
+                .map(PayrollRowDTO::getAmount)
+                .filter(a -> a != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int withoutRate = (int) rows.stream()
+                .filter(r -> r.getHourlyRate() == null).count();
 
         return PayrollReportDTO.builder()
                 .from(range.from())
@@ -197,6 +176,129 @@ public class BusinessMetricsService {
                 .totalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP))
                 .employeesWithoutRate(withoutRate)
                 .build();
+    }
+
+    /** Liquidacion de UN empleado en el periodo (para pagos y mensaje de WhatsApp). */
+    public PayrollRowDTO getPayrollRow(Long employeeId, LocalDate from, LocalDate to) {
+        Range range = resolveRange(from, to);
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Employee not found with id: " + employeeId));
+
+        List<TimeEntry> own = employeeEntries(employee.getId(), range).stream()
+                .filter(WorkTimeCalculator::isCountable)
+                .toList();
+
+        return buildPayrollRow(employee, own, range);
+    }
+
+    private PayrollRowDTO buildPayrollRow(Employee emp, List<TimeEntry> own, Range range) {
+        long worked = own.stream()
+                .mapToLong(WorkTimeCalculator::netMinutes).sum();
+        long doubles = own.stream()
+                .filter(e -> Boolean.TRUE.equals(e.getPaidDouble()))
+                .mapToLong(WorkTimeCalculator::netMinutes).sum();
+        long payable = worked + doubles; // las dobles suman una vez mas
+
+        BigDecimal amount = emp.getHourlyRate() != null
+                ? costOf(payable, emp.getHourlyRate()) : null;
+
+        Payment payment = paymentRepository
+                .findFirstByEmployeeIdAndFromDateAndToDate(
+                        emp.getId(), range.from(), range.to())
+                .orElse(null);
+
+        return PayrollRowDTO.builder()
+                .employeeId(emp.getId())
+                .employeeName(fullName(emp))
+                .workedMinutes(worked)
+                .doubleMinutes(doubles)
+                .payableMinutes(payable)
+                .workedHours(round2(worked / 60.0))
+                .doubleHours(round2(doubles / 60.0))
+                .payableHours(round2(payable / 60.0))
+                .hourlyRate(emp.getHourlyRate())
+                .amount(amount)
+                .paymentId(payment != null ? payment.getId() : null)
+                .paidAt(payment != null ? payment.getCreatedAt() : null)
+                .build();
+    }
+
+    /**
+     * Mensaje de liquidacion listo para WhatsApp: desglose dia por dia
+     * (horas netas, breaks y feriados x2) y el total a pagar.
+     */
+    public String buildEmployeeMessage(Long employeeId, LocalDate from, LocalDate to) {
+        Range range = resolveRange(from, to);
+        PayrollRowDTO row = getPayrollRow(employeeId, range.from(), range.to());
+
+        List<TimeEntry> entries = employeeEntries(employeeId, range).stream()
+                .filter(WorkTimeCalculator::isCountable)
+                .sorted(Comparator.comparing(TimeEntry::getClockIn))
+                .toList();
+
+        java.time.format.DateTimeFormatter dm =
+                java.time.format.DateTimeFormatter.ofPattern("dd/MM");
+        java.time.format.DateTimeFormatter hm =
+                java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+        String[] dayNames = {"Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"};
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("🧾 *Liquidación — ").append(row.getEmployeeName()).append("*\n");
+        sb.append("Período: ").append(range.from().format(dm))
+                .append(" al ").append(range.to().format(dm)).append("\n\n");
+
+        if (entries.isEmpty()) {
+            sb.append("Sin jornadas registradas en el período.\n");
+        }
+
+        for (TimeEntry e : entries) {
+            LocalDate day = e.getClockIn().toLocalDate();
+            long net = WorkTimeCalculator.netMinutes(e);
+            long breaks = WorkTimeCalculator.breakMinutes(e);
+
+            sb.append(dayNames[day.getDayOfWeek().getValue() - 1]).append(" ")
+                    .append(day.format(dm)).append(" · ")
+                    .append(e.getClockIn().format(hm)).append("–")
+                    .append(e.getClockOut().format(hm));
+            if (breaks > 0) {
+                sb.append(" (break ").append(formatMinutes(breaks)).append(")");
+            }
+            sb.append(" · ").append(formatMinutes(net)).append(" hs");
+            if (Boolean.TRUE.equals(e.getPaidDouble())) {
+                sb.append(" *FERIADO ×2*");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("\nHoras trabajadas: ").append(formatMinutes(row.getWorkedMinutes())).append(" hs\n");
+        if (row.getDoubleMinutes() > 0) {
+            sb.append("Horas dobles (feriado ×2): ")
+                    .append(formatMinutes(row.getDoubleMinutes())).append(" hs\n");
+        }
+        sb.append("Horas a pagar: ").append(formatMinutes(row.getPayableMinutes())).append(" hs\n");
+
+        if (row.getHourlyRate() != null) {
+            sb.append("Valor hora: $").append(formatMoney(row.getHourlyRate())).append("\n");
+            sb.append("*TOTAL: $").append(formatMoney(row.getAmount())).append("*\n");
+        }
+
+        return sb.toString();
+    }
+
+    private List<TimeEntry> employeeEntries(Long employeeId, Range range) {
+        return timeEntryRepository.findByEmployeeIdAndClockInBetween(
+                employeeId,
+                range.from().atStartOfDay(),
+                range.to().plusDays(1).atStartOfDay());
+    }
+
+    private String formatMoney(BigDecimal value) {
+        java.text.NumberFormat nf = java.text.NumberFormat.getNumberInstance(
+                java.util.Locale.forLanguageTag("es-AR"));
+        nf.setMinimumFractionDigits(0);
+        nf.setMaximumFractionDigits(2);
+        return nf.format(value);
     }
 
     public String buildPayrollCsv(LocalDate from, LocalDate to) {
