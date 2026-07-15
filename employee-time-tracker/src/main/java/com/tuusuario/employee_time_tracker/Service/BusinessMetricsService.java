@@ -4,6 +4,8 @@ import com.tuusuario.employee_time_tracker.Model.Dto.AbsenceDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.AnalyticsSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.OvertimeDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.PayrollReportDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.PayrollRowDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
@@ -88,10 +90,16 @@ public class BusinessMetricsService {
             int days = (int) own.stream()
                     .map(e -> e.getClockIn().toLocalDate()).distinct().count();
 
+            // Para el costo, las jornadas dobles (feriados) cuentan x2,
+            // igual que en la liquidacion.
+            long payable = worked + own.stream()
+                    .filter(e -> Boolean.TRUE.equals(e.getPaidDouble()))
+                    .mapToLong(WorkTimeCalculator::netMinutes).sum();
+
             BigDecimal cost = null;
             if (emp.getHourlyRate() != null) {
                 withRate++;
-                cost = costOf(worked, emp.getHourlyRate());
+                cost = costOf(payable, emp.getHourlyRate());
                 totalCost = totalCost.add(cost);
             }
 
@@ -127,6 +135,86 @@ public class BusinessMetricsService {
                 .employeesWithHourlyRate(withRate)
                 .perEmployee(perEmployee)
                 .build();
+    }
+
+    // ---------- Liquidacion (cuanto pagarle a cada empleado) ----------
+
+    /**
+     * Liquidacion del periodo: minutos netos trabajados donde las jornadas
+     * marcadas como dobles (feriados) cuentan dos veces, por el valor hora.
+     */
+    public PayrollReportDTO getPayroll(LocalDate from, LocalDate to) {
+        Range range = resolveRange(from, to);
+        Map<Long, List<TimeEntry>> byEmployee = countableEntries(range).stream()
+                .collect(Collectors.groupingBy(e -> e.getEmployee().getId()));
+
+        List<PayrollRowDTO> rows = new ArrayList<>();
+        long totalPayable = 0;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        int withoutRate = 0;
+
+        for (List<TimeEntry> own : byEmployee.values()) {
+            Employee emp = own.get(0).getEmployee();
+
+            long worked = own.stream()
+                    .mapToLong(WorkTimeCalculator::netMinutes).sum();
+            long doubles = own.stream()
+                    .filter(e -> Boolean.TRUE.equals(e.getPaidDouble()))
+                    .mapToLong(WorkTimeCalculator::netMinutes).sum();
+            long payable = worked + doubles; // las dobles suman una vez mas
+
+            BigDecimal amount = null;
+            if (emp.getHourlyRate() != null) {
+                amount = costOf(payable, emp.getHourlyRate());
+                totalAmount = totalAmount.add(amount);
+            } else {
+                withoutRate++;
+            }
+
+            totalPayable += payable;
+
+            rows.add(PayrollRowDTO.builder()
+                    .employeeId(emp.getId())
+                    .employeeName(fullName(emp))
+                    .workedMinutes(worked)
+                    .doubleMinutes(doubles)
+                    .payableMinutes(payable)
+                    .workedHours(round2(worked / 60.0))
+                    .doubleHours(round2(doubles / 60.0))
+                    .payableHours(round2(payable / 60.0))
+                    .hourlyRate(emp.getHourlyRate())
+                    .amount(amount)
+                    .build());
+        }
+
+        rows.sort(Comparator.comparingLong(PayrollRowDTO::getPayableMinutes).reversed());
+
+        return PayrollReportDTO.builder()
+                .from(range.from())
+                .to(range.to())
+                .rows(rows)
+                .totalPayableMinutes(totalPayable)
+                .totalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP))
+                .employeesWithoutRate(withoutRate)
+                .build();
+    }
+
+    public String buildPayrollCsv(LocalDate from, LocalDate to) {
+        PayrollReportDTO report = getPayroll(from, to);
+        StringBuilder sb = new StringBuilder("﻿");
+        sb.append("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Total\n");
+        for (PayrollRowDTO row : report.getRows()) {
+            sb.append(row.getEmployeeName()).append(";")
+                    .append(formatMinutes(row.getWorkedMinutes())).append(";")
+                    .append(formatMinutes(row.getDoubleMinutes())).append(";")
+                    .append(formatMinutes(row.getPayableMinutes())).append(";")
+                    .append(row.getHourlyRate() != null ? row.getHourlyRate() : "").append(";")
+                    .append(row.getAmount() != null ? row.getAmount() : "sin valor hora")
+                    .append("\n");
+        }
+        sb.append("TOTAL;;;").append(formatMinutes(report.getTotalPayableMinutes()))
+                .append(";;").append(report.getTotalAmount()).append("\n");
+        return sb.toString();
     }
 
     // ---------- Puntualidad ----------

@@ -188,6 +188,8 @@ public class AnalyticsService {
                 .clockIn(timeEntry.getClockIn())
                 .clockOut(timeEntry.getClockOut())
                 .status(timeEntry.getStatus())
+                .autoClosed(timeEntry.getAutoClosed())
+                .paidDouble(timeEntry.getPaidDouble())
                 .build();
     }
 

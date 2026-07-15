@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Controller;
 
 import com.tuusuario.employee_time_tracker.Model.Dto.CreateTimeEntryRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.PaidDoubleRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TimeEntrySummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.UpdateTimeEntryRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WorkedHoursResponseDTO;
@@ -53,6 +54,16 @@ public class TimeEntryController {
     public ResponseEntity<Void> deleteEntry(@PathVariable Long timeEntryId) {
         timeEntryService.deleteEntry(timeEntryId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Marca/desmarca una jornada como pagada al doble (feriado). */
+    @PatchMapping("/{timeEntryId}/paid-double")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<TimeEntrySummaryDTO> setPaidDouble(
+            @PathVariable Long timeEntryId,
+            @Valid @RequestBody PaidDoubleRequestDTO dto) {
+        return ResponseEntity.ok(
+                timeEntryService.setPaidDouble(timeEntryId, dto.getPaidDouble()));
     }
 
     /** Correccion manual de una jornada (horario de entrada y salida). */

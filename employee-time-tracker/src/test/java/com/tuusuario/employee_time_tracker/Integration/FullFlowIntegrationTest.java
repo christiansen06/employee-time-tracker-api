@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -177,6 +178,50 @@ class FullFlowIntegrationTest {
 
     @Test
     @Order(6)
+    void manualEntryPaidDoubleAndPayroll() throws Exception {
+        // Cargar valor hora al empleado
+        mockMvc.perform(put("/api/employees/" + employeeId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"name\":\"Mica\",\"lastName\":\"Gomez\"," +
+                                "\"email\":\"mica@test.com\",\"position\":\"Caja\"," +
+                                "\"hourlyRate\":5500}"))
+                .andExpect(status().is2xxSuccessful());
+
+        // Alta manual de una jornada olvidada de ayer (8 hs)
+        String yesterday = java.time.LocalDate.now().minusDays(1).toString();
+        MvcResult res = mockMvc.perform(post("/api/time-entries")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + "," +
+                                "\"clockIn\":\"" + yesterday + "T09:00:00\"," +
+                                "\"clockOut\":\"" + yesterday + "T17:00:00\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        long entryId = objectMapper.readTree(res.getResponse().getContentAsString())
+                .get("timeEntryId").asLong();
+
+        // Marcarla como pagada doble (feriado)
+        mockMvc.perform(patch("/api/time-entries/" + entryId + "/paid-double")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"paidDouble\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paidDouble").value(true));
+
+        // La liquidacion de ayer refleja 8 hs dobles = 16 hs x $5500 = $88.000
+        mockMvc.perform(get("/api/analytics/payroll?from=" + yesterday + "&to=" + yesterday)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0].workedMinutes").value(480))
+                .andExpect(jsonPath("$.rows[0].doubleMinutes").value(480))
+                .andExpect(jsonPath("$.rows[0].payableMinutes").value(960))
+                .andExpect(jsonPath("$.rows[0].amount").value(88000.00))
+                .andExpect(jsonPath("$.totalAmount").value(88000.00));
+    }
+
+    @Test
+    @Order(7)
     void refreshTokenRotates() throws Exception {
         MvcResult res = mockMvc.perform(post("/api/auth/refresh")
                         .contentType(APPLICATION_JSON)

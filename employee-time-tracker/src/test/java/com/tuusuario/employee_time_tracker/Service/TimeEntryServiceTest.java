@@ -192,6 +192,37 @@ class TimeEntryServiceTest {
     }
 
     @Test
+    void setPaidDoubleMarksEntryAndAudits() {
+        TimeEntry entry = TimeEntry.builder().id(5L)
+                .clockIn(LocalDateTime.of(2026, 7, 9, 9, 0))
+                .clockOut(LocalDateTime.of(2026, 7, 9, 17, 0))
+                .status(TimeEntryStatus.FINISHED).employee(employee()).build();
+        when(timeEntryRepository.findById(5L)).thenReturn(Optional.of(entry));
+        when(timeEntryRepository.save(any(TimeEntry.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        TimeEntrySummaryDTO dto = service.setPaidDouble(5L, true);
+
+        assertThat(dto.getPaidDouble()).isTrue();
+        verify(auditLogService).record(eq("TIME_ENTRY"), eq(5L), eq("UPDATE"),
+                eq("paidDouble: false -> true"));
+    }
+
+    @Test
+    void setPaidDoubleWithSameValueDoesNothing() {
+        TimeEntry entry = TimeEntry.builder().id(5L)
+                .paidDouble(true)
+                .status(TimeEntryStatus.FINISHED).employee(employee()).build();
+        when(timeEntryRepository.findById(5L)).thenReturn(Optional.of(entry));
+
+        TimeEntrySummaryDTO dto = service.setPaidDouble(5L, true);
+
+        assertThat(dto.getPaidDouble()).isTrue();
+        verify(timeEntryRepository, never()).save(any());
+        verify(auditLogService, never()).record(anyString(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
     void clockOutByEmployeeIdFailsWithoutOpenEntry() {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
         when(timeEntryRepository.findFirstByEmployeeIdAndStatusInOrderByClockInDesc(
