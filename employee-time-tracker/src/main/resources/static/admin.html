@@ -93,10 +93,11 @@
     <div id="fixBanner" class="msg error" style="display:none;margin-bottom:14px;"></div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="empleados">Empleados</button>
-      <button class="tab" data-tab="ahora">Quién trabaja ahora</button>
-      <button class="tab" data-tab="reportes">Reportes</button>
-      <button class="tab" data-tab="analisis">Análisis</button>
+      <button class="tab active" data-tab="empleados">👥 Empleados</button>
+      <button class="tab" data-tab="ahora">🟢 Ahora</button>
+      <button class="tab" data-tab="reportes">📋 Fichajes</button>
+      <button class="tab" data-tab="pagos">💵 Pagos</button>
+      <button class="tab" data-tab="analisis">📊 Análisis</button>
     </div>
 
     <!-- EMPLEADOS -->
@@ -195,7 +196,7 @@
         <div id="weekPaySummary" style="margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:12px;display:none;">
           <div class="row" style="justify-content:space-between;align-items:center;">
             <div>
-              <div class="muted" style="font-size:12px;">A pagar esta semana</div>
+              <div class="muted" style="font-size:12px;">Horas de la semana</div>
               <div class="hours-big" id="weekPayAmount">–</div>
             </div>
             <div class="muted" id="weekPayDetail" style="text-align:right;font-size:13px;"></div>
@@ -210,8 +211,16 @@
         <div id="entriesMsg" class="msg"></div>
       </div>
 
+    </div>
+
+    <!-- PAGOS -->
+    <div id="tab-pagos" class="hidden">
       <div class="card">
         <h3 style="margin-top:0;">Liquidación <span class="muted" style="font-size:13px;">(cuánto pagarle a cada empleado)</span></h3>
+        <div class="row" style="margin-bottom:10px;">
+          <button class="range-btn" id="payThisWeek">Esta semana</button>
+          <button class="range-btn" id="payLastWeek">Semana pasada</button>
+        </div>
         <label>Período</label>
         <div class="row">
           <input type="date" id="payFrom" style="width:auto;">
@@ -364,14 +373,20 @@
   $("logoutBtn").addEventListener("click", ()=>{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); showLogin(); });
 
   // TABS
-  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
-    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-    t.classList.add("active");
-    ["empleados","ahora","reportes","analisis"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
-    if (t.dataset.tab==="ahora") loadNow();
-    if (t.dataset.tab==="reportes"){ loadEmpOptions(); setDefaultPayRange(); loadPayments(); }
-    if (t.dataset.tab==="analisis") loadAnalytics();
-  }));
+  const TAB_KEY = "buba_admin_tab";
+  const TAB_NAMES = ["empleados","ahora","reportes","pagos","analisis"];
+
+  function activateTab(name){
+    if (!TAB_NAMES.includes(name)) name = "empleados";
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active", x.dataset.tab===name));
+    TAB_NAMES.forEach(n=>$("tab-"+n).classList.toggle("hidden", n!==name));
+    localStorage.setItem(TAB_KEY, name);
+    if (name==="ahora") loadNow();
+    if (name==="reportes") loadEmpOptions();
+    if (name==="pagos"){ setDefaultPayRange(); loadPayments(); }
+    if (name==="analisis") loadAnalytics();
+  }
+  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.tab)));
 
   // EMPLEADOS
   let empCache = [];
@@ -656,7 +671,7 @@
     renderWeekPay(from, to);
   }
 
-  /** Resumen de pago de la semana del empleado elegido, al pie del editor. */
+  /** Resumen de HORAS de la semana del empleado (sin montos: la plata vive en Pagos). */
   async function renderWeekPay(from, to){
     const box = $("weekPaySummary");
     const rep = await safe("/api/analytics/payroll?from="+from+"&to="+to);
@@ -667,16 +682,13 @@
       $("weekPayDetail").textContent = "Sin jornadas cerradas esta semana.";
       return;
     }
-    let detail = fmtHM(row.workedMinutes)+" hs trabajadas";
-    if (row.doubleMinutes>0) detail += " (+"+fmtHM(row.doubleMinutes)+" hs dobles ×2)";
-    detail += " = "+fmtHM(row.payableMinutes)+" hs a pagar";
-    if (row.hourlyRate!=null){
-      $("weekPayAmount").textContent = money(row.amount);
-      detail += " × "+money(row.hourlyRate)+"/h";
-    } else {
-      $("weekPayAmount").textContent = fmtHM(row.payableMinutes)+" hs";
-      detail += " · cargá el valor hora en Empleados para ver el monto";
+    $("weekPayAmount").textContent = fmtHM(row.workedMinutes)+" hs";
+    let detail = "";
+    if (row.doubleMinutes>0){
+      detail = "+"+fmtHM(row.doubleMinutes)+" hs dobles ×2 = "
+        +fmtHM(row.payableMinutes)+" hs a pagar · ";
     }
+    detail += "el monto está en 💵 Pagos";
     $("weekPayDetail").textContent = detail;
   }
 
@@ -759,13 +771,22 @@
   }
 
   // LIQUIDACION (todos los empleados)
-  function setDefaultPayRange(){
-    if($("payFrom").value && $("payTo").value) return;
+  function setPayWeek(offsetDays){
     const mon = mondayOf(new Date().toISOString().substring(0,10));
+    mon.setDate(mon.getDate()+offsetDays);
     const sun = new Date(mon); sun.setDate(sun.getDate()+6);
     $("payFrom").value = isoDate(mon);
     $("payTo").value = isoDate(sun);
   }
+  function setDefaultPayRange(){
+    if($("payFrom").value && $("payTo").value) return;
+    setPayWeek(0);
+  }
+  function markPayShortcut(btn){
+    ["payThisWeek","payLastWeek"].forEach(id=>$(id).classList.toggle("active", $(id)===btn));
+  }
+  $("payThisWeek").addEventListener("click", function(){ markPayShortcut(this); setPayWeek(0); loadPayroll(); });
+  $("payLastWeek").addEventListener("click", function(){ markPayShortcut(this); setPayWeek(-7); loadPayroll(); });
 
   $("payShow").addEventListener("click", loadPayroll);
   async function loadPayroll(){
@@ -870,16 +891,38 @@
     tb.querySelectorAll("button[data-preopen]").forEach(b=>b.addEventListener("click",()=>reopenPayment(b.dataset.preopen, $("paymentsMsg"), loadPayments)));
   }
 
-  // Banner global de jornadas a corregir
+  // Banner global de jornadas a corregir (cada chip lleva directo al editor)
   async function loadFixBanner(){
     const fixes = await safe("/api/analytics/pending-fixes");
     const el = $("fixBanner");
     if(!fixes || !fixes.length){ el.style.display="none"; return; }
-    const det = fixes.slice(0,5).map(f=>f.employeeName+" ("+(f.clockIn||"").substring(8,10)+"/"+(f.clockIn||"").substring(5,7)+")").join(", ");
+    const chips = fixes.slice(0,6).map(f=>{
+      const d = (f.clockIn||"").substring(0,10);
+      const lbl = f.employeeName+" ("+d.substring(8,10)+"/"+d.substring(5,7)+")";
+      return '<button data-fix-emp="'+f.employeeId+'" data-fix-date="'+d+'"'+
+        ' style="padding:4px 10px;font-size:12px;background:#0b1220;color:#fca5a5;'+
+        'border:1px solid rgba(239,68,68,.5);">'+lbl+' →</button>';
+    }).join(" ");
     el.innerHTML = "⚠ <strong>"+fixes.length+" jornada"+(fixes.length>1?"s":"")+" auto-cerrada"+(fixes.length>1?"s":"")+
-      " necesita"+(fixes.length>1?"n":"")+" corrección</strong> antes de liquidar: "+det+
-      (fixes.length>5?"…":"")+" — corregilas en Reportes → Ver jornadas.";
+      " necesita"+(fixes.length>1?"n":"")+" corrección</strong> antes de liquidar (tocá para ir): "+chips+
+      (fixes.length>6?" …":"");
     el.style.display="block";
+    el.querySelectorAll("button[data-fix-emp]").forEach(b=>
+      b.addEventListener("click",()=>goToFix(b.dataset.fixEmp, b.dataset.fixDate)));
+  }
+
+  /** Salta al editor de jornadas del empleado, en la semana de la fecha dada. */
+  async function goToFix(employeeId, dateIso){
+    activateTab("reportes");
+    await loadEmpOptions();
+    $("repEmp").value = String(employeeId);
+    entriesEmpId = String(employeeId);
+    $("entWeekDate").value = dateIso;
+    const opt = $("repEmp").selectedOptions[0];
+    $("entriesWho").textContent = "· "+(opt ? opt.textContent : "");
+    $("entriesCard").style.display = "block";
+    await loadEntries();
+    $("entriesCard").scrollIntoView({behavior:"smooth"});
   }
 
   $("payCsv").addEventListener("click", async ()=>{
@@ -913,14 +956,14 @@
     $("anFrom").value = from.toISOString().substring(0,10);
     $("anTo").value = to.toISOString().substring(0,10);
   }
-  document.querySelectorAll(".range-btn").forEach(b=>b.addEventListener("click",()=>{
-    document.querySelectorAll(".range-btn").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll("#tab-analisis .range-btn").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll("#tab-analisis .range-btn").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
     setRangeDays(parseInt(b.dataset.days,10));
     loadAnalytics();
   }));
   $("anApply").addEventListener("click", ()=>{
-    document.querySelectorAll(".range-btn").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll("#tab-analisis .range-btn").forEach(x=>x.classList.remove("active"));
     loadAnalytics();
   });
   setRangeDays(30);
@@ -1066,7 +1109,11 @@
   }
 
   function showLogin(){ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
-  function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); loadFixBanner(); }
+  function showPanel(){
+    $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden");
+    loadEmployees(); loadFixBanner();
+    activateTab(localStorage.getItem(TAB_KEY) || "empleados");
+  }
 
   // "Quien trabaja ahora" se refresca solo cada 60s mientras este visible
   setInterval(() => {
