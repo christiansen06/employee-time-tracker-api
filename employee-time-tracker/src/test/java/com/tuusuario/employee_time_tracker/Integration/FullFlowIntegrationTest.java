@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -39,6 +40,8 @@ class FullFlowIntegrationTest {
     private static String adminRefresh;
     private static String kioskToken;
     private static Long employeeId;
+    private static Long manualEntryId;
+    private static String manualEntryDate;
 
     private String login(String username, String password) throws Exception {
         MvcResult res = mockMvc.perform(post("/api/auth/login")
@@ -200,6 +203,8 @@ class FullFlowIntegrationTest {
                 .andReturn();
         long entryId = objectMapper.readTree(res.getResponse().getContentAsString())
                 .get("timeEntryId").asLong();
+        manualEntryId = entryId;
+        manualEntryDate = yesterday;
 
         // Marcarla como pagada doble (feriado)
         mockMvc.perform(patch("/api/time-entries/" + entryId + "/paid-double")
@@ -222,6 +227,77 @@ class FullFlowIntegrationTest {
 
     @Test
     @Order(7)
+    void paymentClosesPeriodAndReopeningUnlocksIt() throws Exception {
+        // Pagar el periodo de la jornada manual (ayer)
+        MvcResult res = mockMvc.perform(post("/api/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + "," +
+                                "\"from\":\"" + manualEntryDate + "\"," +
+                                "\"to\":\"" + manualEntryDate + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.amount").value(88000.00))
+                .andReturn();
+        long paymentId = objectMapper.readTree(res.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        // Pago duplicado del mismo periodo -> 409
+        mockMvc.perform(post("/api/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + "," +
+                                "\"from\":\"" + manualEntryDate + "\"," +
+                                "\"to\":\"" + manualEntryDate + "\"}"))
+                .andExpect(status().isConflict());
+
+        // El periodo queda bloqueado: editar la jornada -> 409
+        mockMvc.perform(put("/api/time-entries/" + manualEntryId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"clockIn\":\"" + manualEntryDate + "T08:00:00\"," +
+                                "\"clockOut\":\"" + manualEntryDate + "T16:00:00\"}"))
+                .andExpect(status().isConflict());
+
+        // La liquidacion muestra el pago
+        mockMvc.perform(get("/api/analytics/payroll?from=" + manualEntryDate
+                        + "&to=" + manualEntryDate)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0].paymentId").value(paymentId));
+
+        // El mensaje de WhatsApp tiene el desglose y el total
+        MvcResult msg = mockMvc.perform(get("/api/analytics/payroll/" + employeeId
+                        + "/message?from=" + manualEntryDate + "&to=" + manualEntryDate)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+        String text = msg.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(text)
+                .contains("Mica Gomez")
+                .contains("FERIADO ×2")
+                .contains("TOTAL: $88.000");
+
+        // Reabrir el pago -> la jornada vuelve a ser editable
+        mockMvc.perform(delete("/api/payments/" + paymentId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(put("/api/time-entries/" + manualEntryId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"clockIn\":\"" + manualEntryDate + "T09:00:00\"," +
+                                "\"clockOut\":\"" + manualEntryDate + "T17:00:00\"}"))
+                .andExpect(status().isOk());
+
+        // Sin jornadas auto-cerradas pendientes
+        mockMvc.perform(get("/api/analytics/pending-fixes")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    @Order(8)
     void refreshTokenRotates() throws Exception {
         MvcResult res = mockMvc.perform(post("/api/auth/refresh")
                         .contentType(APPLICATION_JSON)

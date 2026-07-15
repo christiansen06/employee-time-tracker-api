@@ -24,4 +24,7 @@ public class PayrollRowDTO {
     BigDecimal hourlyRate;
     /** payableMinutes/60 x hourlyRate. Null si no hay valor hora. */
     BigDecimal amount;
+    /** Pago exacto de este periodo, si ya se realizo (sino null). */
+    Long paymentId;
+    java.time.LocalDateTime paidAt;
 }

@@ -56,6 +56,7 @@ public class SecurityConfig {
                         // Gestion de empleados y reportes: solo ADMIN.
                         .requestMatchers("/api/employees/**").hasRole("ADMIN")
                         .requestMatchers("/api/analytics/**").hasRole("ADMIN")
+                        .requestMatchers("/api/payments/**").hasRole("ADMIN")
                         // Fichaje y breaks: ADMIN o EMPLOYEE.
                         .requestMatchers("/api/time-entries/**", "/api/breaks/**")
                                 .hasAnyRole("ADMIN", "EMPLOYEE")

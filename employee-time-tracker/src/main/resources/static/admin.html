@@ -24,7 +24,7 @@
     h1 { letter-spacing:1px; margin:0; }
     .muted { color:var(--muted); }
     input, select { width:100%; padding:12px; border-radius:10px; border:1px solid var(--border);
-      background:#0b1220; color:var(--text); font-size:15px; }
+      background:#0b1220; color:var(--text); font-size:15px; color-scheme:dark; }
     button { border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;
       color:#fff; padding:10px 14px; transition:opacity .15s, transform .05s; }
     button:active { transform:scale(.97); }
@@ -89,6 +89,8 @@
       <div class="brand"><img class="logo" src="/icon.svg" alt=""><h1>BuBa <span class="muted" style="font-size:16px;">Admin</span></h1></div>
       <button class="btn-ghost" id="logoutBtn">Salir</button>
     </div>
+
+    <div id="fixBanner" class="msg error" style="display:none;margin-bottom:14px;"></div>
 
     <div class="tabs">
       <button class="tab active" data-tab="empleados">Empleados</button>
@@ -220,11 +222,25 @@
         </div>
         <div style="overflow-x:auto;margin-top:14px;">
           <table id="payTable" style="display:none;">
-            <thead><tr><th>Empleado</th><th>Horas</th><th>Dobles</th><th>A pagar</th><th>Valor hora</th><th>Total</th></tr></thead>
+            <thead><tr><th>Empleado</th><th>Horas</th><th>Dobles</th><th>A pagar</th><th>Valor hora</th><th>Total</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div id="payMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <h3 style="margin:0;">Pagos realizados <span class="muted" style="font-size:13px;">(historial; reabrir desbloquea el período)</span></h3>
+          <button class="btn-ghost" id="reloadPayments">↻ Actualizar</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px;">
+          <table id="paymentsTable">
+            <thead><tr><th>Pagado el</th><th>Empleado</th><th>Período</th><th>Hs a pagar</th><th>Monto</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="paymentsMsg" class="msg"></div>
       </div>
     </div>
 
@@ -353,7 +369,7 @@
     t.classList.add("active");
     ["empleados","ahora","reportes","analisis"].forEach(name=>$("tab-"+name).classList.toggle("hidden", name!==t.dataset.tab));
     if (t.dataset.tab==="ahora") loadNow();
-    if (t.dataset.tab==="reportes"){ loadEmpOptions(); setDefaultPayRange(); }
+    if (t.dataset.tab==="reportes"){ loadEmpOptions(); setDefaultPayRange(); loadPayments(); }
     if (t.dataset.tab==="analisis") loadAnalytics();
   }));
 
@@ -579,8 +595,10 @@
     const outVal = e && e.clockOut ? e.clockOut.substring(11,16) : "";
     let horas = '<span class="muted">–</span>';
     if (e && e.clockIn && e.clockOut){
-      const mins = Math.round((new Date(e.clockOut)-new Date(e.clockIn))/60000);
-      horas = fmtHM(Math.max(0,mins));
+      const gross = Math.round((new Date(e.clockOut)-new Date(e.clockIn))/60000);
+      const net = Math.max(0, gross - (e.breakMinutes||0));
+      horas = fmtHM(net);
+      if ((e.breakMinutes||0) > 0) horas += ' <span class="muted" title="Break descontado">☕'+fmtHM(e.breakMinutes)+'</span>';
     }
     let badge = "";
     if (e && e.status !== "FINISHED") badge = ' <span class="badge warn">Abierta</span>';
@@ -630,6 +648,7 @@
             ? label+' <button class="btn-ghost" data-add="'+dIso+'" title="Agregar otro turno este día" style="padding:2px 8px;font-size:12px;">+</button>'
             : '<span class="muted">"</span>';
           tb.appendChild(entryRow(dIso, lbl, e));
+          appendBreakRow(tb, e);
         });
       }
     }
@@ -659,6 +678,20 @@
       detail += " · cargá el valor hora en Empleados para ver el monto";
     }
     $("weekPayDetail").textContent = detail;
+  }
+
+  /** Renglón muted debajo de la jornada con el detalle de sus breaks. */
+  function appendBreakRow(tb, e){
+    if(!e || !e.breaks || !e.breaks.length) return;
+    const parts = e.breaks.map(b=>{
+      const ini = b.breakStart ? b.breakStart.substring(11,16) : "?";
+      const fin = b.breakEnd ? b.breakEnd.substring(11,16) : "en curso";
+      const dur = b.durationMinutes!=null ? " ("+fmtHM(b.durationMinutes)+")" : "";
+      return ini+"–"+fin+dur;
+    });
+    const tr=document.createElement("tr");
+    tr.innerHTML = '<td></td><td colspan="5" class="muted" style="font-size:12px;border-bottom:1px solid var(--border);padding-top:0;">☕ Break'+(parts.length>1?"s":"")+': '+parts.join(" · ")+'</td>';
+    tb.appendChild(tr);
   }
 
   function bindEntryButtons(tb){
@@ -744,20 +777,109 @@
       const table=$("payTable"); const tb=table.querySelector("tbody"); tb.innerHTML="";
       if(!rep.rows.length){ table.style.display="none"; flash($("payMsg"),"Sin jornadas cerradas en el período.","error"); return; }
       rep.rows.forEach(r=>{
+        const pagado = r.paymentId != null;
+        const acciones =
+          '<div class="row actions">'+
+          '<button class="btn-green" data-wa="'+r.employeeId+'" title="Enviar desglose por WhatsApp">🟢 WA</button>'+
+          (pagado
+            ? '<span class="badge on" title="Período pagado y bloqueado">PAGADO '+(r.paidAt?r.paidAt.substring(8,10)+'/'+r.paidAt.substring(5,7):'')+'</span>'+
+              '<button class="btn-ghost" data-reopen="'+r.paymentId+'" title="Reabrir: desbloquea las jornadas">Reabrir</button>'
+            : '<button class="btn-amber" data-pay="'+r.employeeId+'" data-name="'+r.employeeName+'">✓ Pagar</button>')+
+          '</div>';
         tb.innerHTML += '<tr><td>'+r.employeeName+'</td>'+
           '<td>'+fmtHM(r.workedMinutes)+'</td>'+
           '<td>'+(r.doubleMinutes>0?fmtHM(r.doubleMinutes)+' <span class="badge warn">×2</span>':'<span class="muted">–</span>')+'</td>'+
           '<td><strong>'+fmtHM(r.payableMinutes)+'</strong></td>'+
           '<td>'+(r.hourlyRate!=null?money(r.hourlyRate):'<span class="badge warn">cargar</span>')+'</td>'+
-          '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>':'<span class="muted">–</span>')+'</td></tr>';
+          '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>':'<span class="muted">–</span>')+'</td>'+
+          '<td>'+acciones+'</td></tr>';
       });
       tb.innerHTML += '<tr><td><strong>TOTAL</strong></td><td></td><td></td>'+
         '<td><strong>'+fmtHM(rep.totalPayableMinutes)+'</strong></td><td></td>'+
-        '<td><strong>'+money(rep.totalAmount)+'</strong></td></tr>';
+        '<td><strong>'+money(rep.totalAmount)+'</strong></td><td></td></tr>';
       table.style.display="table";
-      if(rep.employeesWithoutRate>0)
-        flash($("payMsg"), rep.employeesWithoutRate+" empleado(s) sin valor hora cargado: su monto no entra en el TOTAL.","error");
+
+      tb.querySelectorAll("button[data-wa]").forEach(b=>b.addEventListener("click",()=>sendWhatsApp(b.dataset.wa, from, to)));
+      tb.querySelectorAll("button[data-pay]").forEach(b=>b.addEventListener("click",()=>payEmployee(b.dataset.pay, b.dataset.name, from, to)));
+      tb.querySelectorAll("button[data-reopen]").forEach(b=>b.addEventListener("click",()=>reopenPayment(b.dataset.reopen, $("payMsg"), loadPayroll)));
+
+      const msgs=[];
+      if(rep.employeesWithoutRate>0) msgs.push(rep.employeesWithoutRate+" empleado(s) sin valor hora: su monto no entra en el TOTAL.");
+      const fixes = await safe("/api/analytics/pending-fixes");
+      const inRange = (fixes||[]).filter(f=>{ const d=(f.clockIn||"").substring(0,10); return d>=from && d<=to; });
+      if(inRange.length) msgs.push("⚠ "+inRange.length+" jornada(s) auto-cerrada(s) sin corregir dentro del período: corregilas antes de pagar.");
+      if(msgs.length) flash($("payMsg"), msgs.join(" "), "error");
     } catch(err){ handle(err,$("payMsg")); }
+  }
+
+  /** Abre WhatsApp con el desglose del período (fallback: copia al portapapeles). */
+  async function sendWhatsApp(employeeId, from, to){
+    const w = window.open("", "_blank"); // abrir antes del await para evitar el bloqueador de popups
+    try {
+      const res = await fetch("/api/analytics/payroll/"+employeeId+"/message?from="+from+"&to="+to,
+        { headers:{ "Authorization":"Bearer "+token() } });
+      if(!res.ok) throw { status:res.status, message:"No se pudo generar el mensaje ("+res.status+")" };
+      const text = await res.text();
+      const url = "https://wa.me/?text="+encodeURIComponent(text);
+      if (w) { w.location = url; }
+      else {
+        await navigator.clipboard.writeText(text);
+        flash($("payMsg"),"Mensaje copiado al portapapeles (el navegador bloqueó la ventana de WhatsApp).","ok");
+      }
+    } catch(err){ if(w) w.close(); handle(err,$("payMsg")); }
+  }
+
+  async function payEmployee(employeeId, name, from, to){
+    flash($("payMsg"),"");
+    if(!confirm("¿Marcar como PAGADO el período "+from+" al "+to+" de "+name+"?\nLas jornadas de ese período quedan bloqueadas (se pueden reabrir después).")) return;
+    try {
+      await api("/api/payments","POST",{ employeeId: Number(employeeId), from, to });
+      flash($("payMsg"),"Pago registrado. El período quedó cerrado.","ok");
+      loadPayroll(); loadPayments();
+    } catch(err){ handle(err,$("payMsg")); }
+  }
+
+  async function reopenPayment(paymentId, msgEl, refresh){
+    if(!confirm("¿Reabrir este pago? Las jornadas del período vuelven a ser editables. Queda registrado en la auditoría.")) return;
+    try {
+      await api("/api/payments/"+paymentId,"DELETE");
+      flash(msgEl,"Pago reabierto.","ok");
+      refresh(); loadPayments();
+    } catch(err){ handle(err,msgEl); }
+  }
+
+  // Historial de pagos
+  $("reloadPayments").addEventListener("click", loadPayments);
+  async function loadPayments(){
+    const tb=$("paymentsTable").querySelector("tbody"); tb.innerHTML="";
+    const page = await safe("/api/payments?size=50");
+    const rows = Array.isArray(page) ? page : (page.content || []);
+    if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="muted">Todavía no registraste pagos.</td></tr>'; return; }
+    rows.forEach(p=>{
+      const f=(s)=>s? s.substring(8,10)+'/'+s.substring(5,7) : "";
+      tb.innerHTML += '<tr><td>'+f(p.createdAt)+'</td><td>'+p.employeeName+'</td>'+
+        '<td>'+f(p.from)+' → '+f(p.to)+'</td>'+
+        '<td>'+fmtHM(p.payableMinutes)+(p.doubleMinutes>0?' <span class="badge warn">×2</span>':'')+'</td>'+
+        '<td>'+(p.amount!=null?'<strong>'+money(p.amount)+'</strong>':'<span class="muted">–</span>')+'</td>'+
+        '<td><div class="row actions">'+
+          '<button class="btn-green" data-pwa="'+p.employeeId+'" data-from="'+p.from+'" data-to="'+p.to+'">🟢 WA</button>'+
+          '<button class="btn-red" data-preopen="'+p.id+'" title="Reabrir período">🗑</button>'+
+        '</div></td></tr>';
+    });
+    tb.querySelectorAll("button[data-pwa]").forEach(b=>b.addEventListener("click",()=>sendWhatsApp(b.dataset.pwa, b.dataset.from, b.dataset.to)));
+    tb.querySelectorAll("button[data-preopen]").forEach(b=>b.addEventListener("click",()=>reopenPayment(b.dataset.preopen, $("paymentsMsg"), loadPayments)));
+  }
+
+  // Banner global de jornadas a corregir
+  async function loadFixBanner(){
+    const fixes = await safe("/api/analytics/pending-fixes");
+    const el = $("fixBanner");
+    if(!fixes || !fixes.length){ el.style.display="none"; return; }
+    const det = fixes.slice(0,5).map(f=>f.employeeName+" ("+(f.clockIn||"").substring(8,10)+"/"+(f.clockIn||"").substring(5,7)+")").join(", ");
+    el.innerHTML = "⚠ <strong>"+fixes.length+" jornada"+(fixes.length>1?"s":"")+" auto-cerrada"+(fixes.length>1?"s":"")+
+      " necesita"+(fixes.length>1?"n":"")+" corrección</strong> antes de liquidar: "+det+
+      (fixes.length>5?"…":"")+" — corregilas en Reportes → Ver jornadas.";
+    el.style.display="block";
   }
 
   $("payCsv").addEventListener("click", async ()=>{
@@ -944,7 +1066,7 @@
   }
 
   function showLogin(){ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); $("panel").classList.add("hidden"); $("loginView").classList.remove("hidden"); }
-  function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); }
+  function showPanel(){ $("loginView").classList.add("hidden"); $("panel").classList.remove("hidden"); loadEmployees(); loadFixBanner(); }
 
   // "Quien trabaja ahora" se refresca solo cada 60s mientras este visible
   setInterval(() => {

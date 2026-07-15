@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Service;
 
 import java.time.format.DateTimeParseException;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
+import com.tuusuario.employee_time_tracker.Model.Dto.BreakDetailDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.BreakSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.DailyHoursDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.EmployeeResponseDTO;
@@ -15,6 +16,7 @@ import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
+import com.tuusuario.employee_time_tracker.Util.WorkTimeCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -178,8 +180,25 @@ public class AnalyticsService {
         }
     }
 
+    /** Jornadas auto-cerradas que el admin todavia no corrigio (falsean la liquidacion). */
+    public List<TimeEntrySummaryDTO> getPendingFixes() {
+        return timeEntryRepository.findByAutoClosedTrue().stream()
+                .map(this::mapToTimeEntrySummaryDTO)
+                .toList();
+    }
+
     private TimeEntrySummaryDTO mapToTimeEntrySummaryDTO(TimeEntry timeEntry) {
         Employee employee = timeEntry.getEmployee();
+
+        List<BreakDetailDTO> breaks = timeEntry.getBreaks() == null
+                ? List.of()
+                : timeEntry.getBreaks().stream()
+                        .map(b -> BreakDetailDTO.builder()
+                                .breakStart(b.getBreakStart())
+                                .breakEnd(b.getBreakEnd())
+                                .durationMinutes(b.getDurationMinutes())
+                                .build())
+                        .toList();
 
         return TimeEntrySummaryDTO.builder()
                 .timeEntryId(timeEntry.getId())
@@ -190,6 +209,8 @@ public class AnalyticsService {
                 .status(timeEntry.getStatus())
                 .autoClosed(timeEntry.getAutoClosed())
                 .paidDouble(timeEntry.getPaidDouble())
+                .breakMinutes(WorkTimeCalculator.breakMinutes(timeEntry))
+                .breaks(breaks)
                 .build();
     }
 

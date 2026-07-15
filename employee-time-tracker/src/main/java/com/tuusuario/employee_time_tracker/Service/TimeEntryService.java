@@ -11,6 +11,7 @@ import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Model.Enums.WorkState;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class TimeEntryService {
     private final BreakEntryRepository breakEntryRepository;
     private final CurrentEmployeeService currentEmployeeService;
     private final AuditLogService auditLogService;
+    private final PaymentRepository paymentRepository;
 
     /** Jornada "abierta": fichada y aun no finalizada (incluye estar en break). */
     private static final List<TimeEntryStatus> OPEN_STATUSES =
@@ -94,6 +96,8 @@ public class TimeEntryService {
             throw new IllegalArgumentException("clockOut must be after clockIn.");
         }
 
+        assertPeriodNotPaid(employeeId, clockIn.toLocalDate());
+
         // No permitir superposicion con otra jornada ya registrada:
         // duplicaria horas en reportes y liquidacion.
         if (timeEntryRepository.existsByEmployeeIdAndClockInLessThanAndClockOutGreaterThan(
@@ -134,6 +138,11 @@ public class TimeEntryService {
                     "clockOut must be after clockIn.");
         }
 
+        assertEntryNotPaid(timeEntry);
+        if (timeEntry.getEmployee() != null) {
+            assertPeriodNotPaid(timeEntry.getEmployee().getId(), clockIn.toLocalDate());
+        }
+
         auditLogService.record("TIME_ENTRY", timeEntry.getId(), "UPDATE",
                 "before: clockIn=" + timeEntry.getClockIn()
                         + ", clockOut=" + timeEntry.getClockOut()
@@ -162,6 +171,7 @@ public class TimeEntryService {
         boolean previous = Boolean.TRUE.equals(timeEntry.getPaidDouble());
 
         if (previous != paidDouble) {
+            assertEntryNotPaid(timeEntry);
             auditLogService.record("TIME_ENTRY", timeEntryId, "UPDATE",
                     "paidDouble: " + previous + " -> " + paidDouble);
             timeEntry.setPaidDouble(paidDouble);
@@ -178,6 +188,8 @@ public class TimeEntryService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Time entry not found with id: " + timeEntryId));
 
+        assertEntryNotPaid(timeEntry);
+
         auditLogService.record("TIME_ENTRY", timeEntry.getId(), "DELETE",
                 "employeeId=" + (timeEntry.getEmployee() != null
                         ? timeEntry.getEmployee().getId() : null)
@@ -189,6 +201,26 @@ public class TimeEntryService {
         }
 
         timeEntryRepository.delete(timeEntry);
+    }
+
+    // ---------- Cierre de periodo pagado ----------
+
+    /** La fecha de la jornada existente no puede caer en un periodo ya pagado. */
+    private void assertEntryNotPaid(TimeEntry timeEntry) {
+        if (timeEntry.getEmployee() != null && timeEntry.getClockIn() != null) {
+            assertPeriodNotPaid(timeEntry.getEmployee().getId(),
+                    timeEntry.getClockIn().toLocalDate());
+        }
+    }
+
+    private void assertPeriodNotPaid(Long employeeId, java.time.LocalDate date) {
+        if (paymentRepository
+                .existsByEmployeeIdAndFromDateLessThanEqualAndToDateGreaterThanEqual(
+                        employeeId, date, date)) {
+            throw new IllegalStateException(
+                    "This period was already paid and is locked. "
+                            + "Reopen the payment first (Pagos realizados).");
+        }
     }
 
     // ---------- Estado actual (para el frontend) ----------

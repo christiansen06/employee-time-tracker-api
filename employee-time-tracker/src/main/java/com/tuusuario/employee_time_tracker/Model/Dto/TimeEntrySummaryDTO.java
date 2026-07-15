@@ -18,4 +18,8 @@ public class TimeEntrySummaryDTO {
     private Boolean autoClosed;
     /** true si la jornada se paga al doble (feriado). */
     private Boolean paidDouble;
+    /** Minutos de break de la jornada (0 si no tuvo). */
+    private Long breakMinutes;
+    /** Detalle de los breaks (solo en la planilla de jornadas del admin). */
+    private java.util.List<BreakDetailDTO> breaks;
 }

@@ -6,6 +6,7 @@ import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,7 @@ class TimeEntryServiceTest {
     @Mock private BreakEntryRepository breakEntryRepository;
     @Mock private CurrentEmployeeService currentEmployeeService;
     @Mock private AuditLogService auditLogService;
+    @Mock private PaymentRepository paymentRepository;
 
     @InjectMocks private TimeEntryService service;
 
@@ -189,6 +191,35 @@ class TimeEntryServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("overlap");
         verify(timeEntryRepository, never()).save(any());
+    }
+
+    @Test
+    void operationsOnPaidPeriodAreLocked() {
+        // Todo el periodo de la jornada esta pagado.
+        when(paymentRepository
+                .existsByEmployeeIdAndFromDateLessThanEqualAndToDateGreaterThanEqual(
+                        eq(1L), any(), any())).thenReturn(true);
+
+        TimeEntry entry = TimeEntry.builder().id(5L)
+                .clockIn(LocalDateTime.of(2026, 7, 9, 9, 0))
+                .clockOut(LocalDateTime.of(2026, 7, 9, 17, 0))
+                .status(TimeEntryStatus.FINISHED).employee(employee()).build();
+        when(timeEntryRepository.findById(5L)).thenReturn(Optional.of(entry));
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee()));
+
+        assertThatThrownBy(() -> service.updateEntry(5L,
+                LocalDateTime.of(2026, 7, 9, 8, 0), LocalDateTime.of(2026, 7, 9, 16, 0)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("paid");
+        assertThatThrownBy(() -> service.deleteEntry(5L))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("paid");
+        assertThatThrownBy(() -> service.setPaidDouble(5L, true))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("paid");
+        assertThatThrownBy(() -> service.createManualEntry(1L,
+                LocalDateTime.of(2026, 7, 10, 9, 0), LocalDateTime.of(2026, 7, 10, 17, 0)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("paid");
+
+        verify(timeEntryRepository, never()).save(any());
+        verify(timeEntryRepository, never()).delete(any(TimeEntry.class));
     }
 
     @Test
