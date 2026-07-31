@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -67,15 +68,34 @@ class FullFlowIntegrationTest {
         assertThat(kioskToken).isNotBlank();
     }
 
+    /**
+     * Sesion invalida -> 401 marcado (el cliente renueva o vuelve a loguear).
+     * Rol insuficiente -> 403 con mensaje (no es problema de sesion).
+     *
+     * Regresion: antes ambos casos caian en un 403 con cuerpo vacio, y el
+     * kiosco quedaba mostrando "Error 403" sin poder recuperarse.
+     */
     @Test
     @Order(2)
-    void anonymousAndKioskCannotManageEmployees() throws Exception {
-        mockMvc.perform(get("/api/employees"))
-                .andExpect(status().is4xxClientError());
+    void expiredSessionReturns401AndWrongRoleReturns403() throws Exception {
+        // Sin token
+        mockMvc.perform(get("/api/kiosk/employees"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Session-Expired", "true"))
+                .andExpect(jsonPath("$.message").isNotEmpty());
 
+        // Token corrupto / vencido
+        mockMvc.perform(get("/api/kiosk/employees")
+                        .header("Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.roto.xxx"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Session-Expired", "true"));
+
+        // Autenticado pero sin permisos: 403 con explicacion y sin la marca
         mockMvc.perform(get("/api/employees")
                         .header("Authorization", "Bearer " + kioskToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(header().doesNotExist("X-Session-Expired"))
+                .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
     @Test

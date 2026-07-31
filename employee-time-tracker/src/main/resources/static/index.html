@@ -221,11 +221,16 @@
       const opts = { method, headers: { "Authorization": "Bearer " + token() } };
       if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
       const res = await fetch(path, opts);
-      if (res.status === 401 && !_retried && await tryRefresh()) {
+      let data = null; try { data = await res.json(); } catch (_) {}
+      // Sesion vencida: el servidor la marca. El 403 sin cuerpo es el mismo
+      // caso en servidores viejos (devolvian 403 por token vencido).
+      const expired = (res.status === 401 && res.headers.get("X-Session-Expired") === "true")
+        || (res.status === 403 && !(data && data.message));
+      if (expired && !_retried && await tryRefresh()) {
         return api(path, method, body, true);
       }
-      let data = null; try { data = await res.json(); } catch (_) {}
-      if (!res.ok) throw { status: res.status, message: (data && data.message) || ("Error " + res.status) };
+      if (!res.ok) throw { status: expired ? 401 : res.status,
+        message: (data && data.message) || ("Error " + res.status) };
       return data;
     }
 
