@@ -19,6 +19,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
+    private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final RestAccessDeniedHandler accessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http)
@@ -61,6 +63,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/time-entries/**", "/api/breaks/**")
                                 .hasAnyRole("ADMIN", "EMPLOYEE")
                         .anyRequest().authenticated()
+                )
+                // Sesion vencida/invalida -> 401 (el cliente renueva o vuelve
+                // a loguear); rol insuficiente -> 403. Ambos con cuerpo JSON.
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
                 )
                 .addFilterBefore(jwtAuthFilter,
                         UsernamePasswordAuthenticationFilter.class);
