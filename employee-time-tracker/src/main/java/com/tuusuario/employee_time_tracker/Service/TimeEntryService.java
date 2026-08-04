@@ -11,7 +11,6 @@ import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Model.Enums.WorkState;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
-import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,7 +29,7 @@ public class TimeEntryService {
     private final BreakEntryRepository breakEntryRepository;
     private final CurrentEmployeeService currentEmployeeService;
     private final AuditLogService auditLogService;
-    private final PaymentRepository paymentRepository;
+    private final PaidPeriodGuard paidPeriodGuard;
 
     /** Jornada "abierta": fichada y aun no finalizada (incluye estar en break). */
     private static final List<TimeEntryStatus> OPEN_STATUSES =
@@ -214,13 +213,7 @@ public class TimeEntryService {
     }
 
     private void assertPeriodNotPaid(Long employeeId, java.time.LocalDate date) {
-        if (paymentRepository
-                .existsByEmployeeIdAndFromDateLessThanEqualAndToDateGreaterThanEqual(
-                        employeeId, date, date)) {
-            throw new IllegalStateException(
-                    "This period was already paid and is locked. "
-                            + "Reopen the payment first (Pagos realizados).");
-        }
+        paidPeriodGuard.assertNotPaid(employeeId, date);
     }
 
     // ---------- Estado actual (para el frontend) ----------

@@ -35,6 +35,11 @@ public class AnalyticsService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeService employeeService;
 
+    /** Umbral para resaltar (no alarmar) un break en curso demasiado largo. */
+    @org.springframework.beans.factory.annotation.Value(
+            "${app.analytics.long-break-alert-minutes:120}")
+    private long longBreakAlertMinutes;
+
     // Nota de diseño: las consultas sin resultados devuelven listas vacias
     // (200), no 404. Un rango sin fichadas es un caso normal, no un error.
 
@@ -193,10 +198,15 @@ public class AnalyticsService {
         List<BreakDetailDTO> breaks = timeEntry.getBreaks() == null
                 ? List.of()
                 : timeEntry.getBreaks().stream()
+                        .sorted(java.util.Comparator.comparing(
+                                BreakEntry::getBreakStart,
+                                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
                         .map(b -> BreakDetailDTO.builder()
+                                .id(b.getId())
                                 .breakStart(b.getBreakStart())
                                 .breakEnd(b.getBreakEnd())
                                 .durationMinutes(b.getDurationMinutes())
+                                .breakStatus(b.getBreakStatus())
                                 .build())
                         .toList();
 
@@ -217,11 +227,17 @@ public class AnalyticsService {
     private BreakSummaryDTO mapToBreakSummaryDTO(BreakEntry breakEntry) {
         Employee employee = breakEntry.getTimeEntry().getEmployee();
 
+        Long elapsed = breakEntry.getBreakStart() == null ? null
+                : java.time.Duration.between(
+                        breakEntry.getBreakStart(), LocalDateTime.now()).toMinutes();
+
         return BreakSummaryDTO.builder()
                 .breakId(breakEntry.getId())
                 .employeeId(employee.getId())
                 .employeeName(employee.getName() + " " + employee.getLastName())
                 .breakStart(breakEntry.getBreakStart())
+                .minutesElapsed(elapsed)
+                .longBreak(elapsed != null && elapsed >= longBreakAlertMinutes)
                 .build();
     }
 

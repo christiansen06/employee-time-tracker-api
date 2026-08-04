@@ -126,6 +126,7 @@ Documentación completa en Swagger (`/swagger-ui.html`).
 | Kiosco (KIOSK) | `/api/kiosk/employees`, `verify`, `clock-in/out`, `break/start|end`, `worked-hours` |
 | Fichaje propio (EMPLOYEE) | `/api/time-entries/me/*`, `/api/breaks/me/*` |
 | Jornadas (ADMIN) | ABM: `POST /api/time-entries` (alta manual de jornada olvidada, sin solapamientos), `PUT/DELETE /{id}`, `PATCH /{id}/paid-double` (feriado ×2) — todo queda en `audit_log` |
+| Breaks (ADMIN) | ABM del break puntual sin tocar la jornada: `POST /api/breaks`, `PUT/DELETE /{id}`. Valida que caiga dentro de la jornada y no se pise con otro break; al cerrar un break olvidado la jornada vuelve a estado de trabajo |
 | Reportes (ADMIN) | `weekly-report(+/csv)`, `entries` y `employees/{id}/entries` (paginados) |
 | Analytics (ADMIN) | `summary(+/csv)`, `payroll(+/csv)` (liquidación), `payroll/{id}/message` (WhatsApp), `pending-fixes`, `punctuality`, `overtime(+/csv)`, `absences`, `trends`, `audit-log` |
 | Pagos (ADMIN) | `POST /api/payments` (cierra el período), `GET` (historial), `DELETE /{id}` (reabre) |

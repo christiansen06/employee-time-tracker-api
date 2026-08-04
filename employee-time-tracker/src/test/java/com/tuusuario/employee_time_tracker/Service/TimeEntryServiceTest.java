@@ -6,7 +6,6 @@ import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
-import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,7 +35,7 @@ class TimeEntryServiceTest {
     @Mock private BreakEntryRepository breakEntryRepository;
     @Mock private CurrentEmployeeService currentEmployeeService;
     @Mock private AuditLogService auditLogService;
-    @Mock private PaymentRepository paymentRepository;
+    @Mock private PaidPeriodGuard paidPeriodGuard;
 
     @InjectMocks private TimeEntryService service;
 
@@ -196,9 +195,9 @@ class TimeEntryServiceTest {
     @Test
     void operationsOnPaidPeriodAreLocked() {
         // Todo el periodo de la jornada esta pagado.
-        when(paymentRepository
-                .existsByEmployeeIdAndFromDateLessThanEqualAndToDateGreaterThanEqual(
-                        eq(1L), any(), any())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException(
+                        "This period was already paid and is locked."))
+                .when(paidPeriodGuard).assertNotPaid(eq(1L), any());
 
         TimeEntry entry = TimeEntry.builder().id(5L)
                 .clockIn(LocalDateTime.of(2026, 7, 9, 9, 0))
