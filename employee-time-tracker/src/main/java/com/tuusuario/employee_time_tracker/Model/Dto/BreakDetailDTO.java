@@ -9,7 +9,10 @@ import java.time.LocalDateTime;
 @Value
 @Builder
 public class BreakDetailDTO {
+    /** Necesario para editar o borrar este break puntual. */
+    Long id;
     LocalDateTime breakStart;
     LocalDateTime breakEnd;
     Long durationMinutes;
+    com.tuusuario.employee_time_tracker.Model.Enums.BreakStatus breakStatus;
 }

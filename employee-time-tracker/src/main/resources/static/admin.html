@@ -206,7 +206,8 @@
           Días vacíos: cargá entrada y salida y tocá <strong>Agregar</strong> para registrar la jornada
           (ej.: el empleado trabajó pero no fichó). El <strong>+</strong> agrega un segundo turno en el mismo día.
           <strong>Doble</strong>: marcá la casilla si ese día se paga doble (feriado); impacta al instante en la liquidación.
-          Todo cambio queda en la bitácora de auditoría.
+          <strong>☕ Breaks</strong>: cada break aparece en su propio renglón y se corrige ahí mismo (inicio y fin), sin tocar la jornada;
+          con <strong>+ ☕</strong> agregás uno que el empleado no registró. Todo cambio queda en la bitácora de auditoría.
         </p>
         <div id="entriesMsg" class="msg"></div>
       </div>
@@ -500,15 +501,20 @@
     let html="";
     const entries = await safe("/api/analytics/active-time-entries");
     const breaks = await safe("/api/analytics/active-breaks");
-    const onBreakIds = new Set((breaks||[]).map(b=>b.employeeId));
+    const breakByEmp = {}; (breaks||[]).forEach(b=>{ breakByEmp[b.employeeId]=b; });
     if(!entries || !entries.length){
       html='<p class="muted">Nadie fichado en este momento.</p>';
     } else {
       html='<table><thead><tr><th>Empleado</th><th>Estado</th><th>Desde</th></tr></thead><tbody>';
       entries.forEach(e=>{
-        const enBreak = onBreakIds.has(e.employeeId);
-        const badge = enBreak ? '<span class="badge warn">En break</span>' : '<span class="badge on">Trabajando</span>';
-        html+='<tr><td>'+e.employeeName+'</td><td>'+badge+'</td><td>'+fmt(e.clockIn)+'</td></tr>';
+        const br = breakByEmp[e.employeeId];
+        // El tiempo en break se muestra siempre: un break largo puede ser
+        // legitimo, pero si el empleado se olvido de cerrarlo se nota al toque.
+        const badge = br
+          ? '<span class="badge warn">En break · '+fmtHM(br.minutesElapsed||0)+' hs</span>'
+          : '<span class="badge on">Trabajando</span>';
+        const tint = br && br.longBreak ? ' style="background:rgba(245,158,11,.10);"' : '';
+        html+='<tr'+tint+'><td>'+e.employeeName+'</td><td>'+badge+'</td><td>'+fmt(e.clockIn)+'</td></tr>';
       });
       html+='</tbody></table>';
     }
@@ -631,6 +637,7 @@
       : '';
     const btn = e
       ? '<button class="btn-green" data-save="'+e.timeEntryId+'" data-day="'+dayIso+'" data-key="'+key+'">Guardar</button>'+
+        '<button class="btn-ghost" data-baddrow="'+e.timeEntryId+'" data-day="'+dayIso+'" title="Agregar un break a esta jornada">+ ☕</button>'+
         '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'
       : '<button class="btn-green" data-create="'+dayIso+'" data-key="'+key+'">Agregar</button>';
     tr.innerHTML =
@@ -697,18 +704,42 @@
     $("weekPayDetail").textContent = detail;
   }
 
-  /** Renglón muted debajo de la jornada con el detalle de sus breaks. */
+  /** Debajo de cada jornada, una fila editable por break. */
   function appendBreakRow(tb, e){
-    if(!e || !e.breaks || !e.breaks.length) return;
-    const parts = e.breaks.map(b=>{
-      const ini = b.breakStart ? b.breakStart.substring(11,16) : "?";
-      const fin = b.breakEnd ? b.breakEnd.substring(11,16) : "en curso";
-      const dur = b.durationMinutes!=null ? " ("+fmtHM(b.durationMinutes)+")" : "";
-      return ini+"–"+fin+dur;
-    });
+    if(!e || !e.timeEntryId) return;
+    const day = (e.clockIn||"").substring(0,10);
+    (e.breaks||[]).forEach(b=>tb.appendChild(breakRow(e.timeEntryId, day, b)));
+  }
+
+  /** Fila de break: inicio, fin, duración y acciones. b=null => alta. */
+  function breakRow(timeEntryId, dayIso, b){
     const tr=document.createElement("tr");
-    tr.innerHTML = '<td></td><td colspan="5" class="muted" style="font-size:12px;border-bottom:1px solid var(--border);padding-top:0;">☕ Break'+(parts.length>1?"s":"")+': '+parts.join(" · ")+'</td>';
-    tb.appendChild(tr);
+    const key = b ? ("b"+b.id) : ("bnew-"+timeEntryId+"-"+Math.random().toString(36).slice(2,7));
+    const ini = b && b.breakStart ? b.breakStart.substring(11,16) : "";
+    const fin = b && b.breakEnd ? b.breakEnd.substring(11,16) : "";
+
+    let dur = '<span class="muted">–</span>';
+    if (b){
+      if (b.breakStatus !== "FINISHED")
+        dur = '<span class="badge warn" title="Quedó abierto: cargá la hora real de vuelta">⚠ sin cerrar</span>';
+      else if (!b.durationMinutes)
+        dur = '<span class="badge warn" title="Cerrado automáticamente en 0 min: cargá el horario real">⚠ revisar</span>';
+      else dur = '<span class="muted">'+fmtHM(b.durationMinutes)+'</span>';
+    }
+
+    const btns = b
+      ? '<button class="btn-green" data-bsave="'+b.id+'" data-day="'+dayIso+'" data-key="'+key+'">Guardar</button>'+
+        '<button class="btn-red" data-bdel="'+b.id+'" title="Eliminar break">🗑</button>'
+      : '<button class="btn-green" data-bcreate="'+timeEntryId+'" data-day="'+dayIso+'" data-key="'+key+'">Agregar</button>';
+
+    tr.innerHTML =
+      '<td class="muted" style="font-size:12px;padding-left:20px;">☕ break</td>'+
+      '<td><input type="time" id="tin-'+key+'" value="'+ini+'" style="width:110px;"></td>'+
+      '<td><input type="time" id="tout-'+key+'" value="'+fin+'" style="width:110px;"></td>'+
+      '<td style="font-size:12px;">'+dur+'</td>'+
+      '<td></td>'+
+      '<td><div class="row actions">'+btns+'</div></td>';
+    return tr;
   }
 
   function bindEntryButtons(tb){
@@ -726,6 +757,16 @@
     tb.querySelectorAll("button[data-add]").forEach(b=>b.addEventListener("click",()=>{
       const row = b.closest("tr");
       const extra = entryRow(b.dataset.add, '<span class="muted">"</span>', null);
+      row.parentNode.insertBefore(extra, row.nextSibling);
+      bindEntryButtons(extra.parentNode);
+    }));
+    // Breaks: guardar, borrar, agregar
+    tb.querySelectorAll("button[data-bsave]").forEach(b=>b.addEventListener("click",()=>saveBreak(b.dataset.bsave, b.dataset.day, b.dataset.key)));
+    tb.querySelectorAll("button[data-bdel]").forEach(b=>b.addEventListener("click",()=>deleteBreak(b.dataset.bdel)));
+    tb.querySelectorAll("button[data-bcreate]").forEach(b=>b.addEventListener("click",()=>createBreak(b.dataset.bcreate, b.dataset.day, b.dataset.key)));
+    tb.querySelectorAll("button[data-baddrow]").forEach(b=>b.addEventListener("click",()=>{
+      const row = b.closest("tr");
+      const extra = breakRow(b.dataset.baddrow, b.dataset.day, null);
       row.parentNode.insertBefore(extra, row.nextSibling);
       bindEntryButtons(extra.parentNode);
     }));
@@ -761,6 +802,46 @@
     try {
       await api("/api/time-entries/"+id,"PUT", buildRange(dayIso, tin, tout));
       flash($("entriesMsg"),"Jornada actualizada.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
+  }
+
+  // ---- Breaks: corregir sin tocar el resto del día ----
+  /** Mismo criterio que las jornadas: si el fin es menor, cruza medianoche. */
+  function buildBreakRange(dayIso, tin, tout){
+    const r = buildRange(dayIso, tin, tout);
+    return { breakStart: r.clockIn, breakEnd: r.clockOut };
+  }
+
+  async function saveBreak(id, dayIso, key){
+    flash($("entriesMsg"),"");
+    const tin=$("tin-"+key).value, tout=$("tout-"+key).value;
+    if(!tin || !tout){ flash($("entriesMsg"),"Completá inicio y fin del break.","error"); return; }
+    try {
+      await api("/api/breaks/"+id,"PUT", buildBreakRange(dayIso, tin, tout));
+      flash($("entriesMsg"),"Break actualizado.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
+  }
+
+  async function createBreak(timeEntryId, dayIso, key){
+    flash($("entriesMsg"),"");
+    const tin=$("tin-"+key).value, tout=$("tout-"+key).value;
+    if(!tin || !tout){ flash($("entriesMsg"),"Completá inicio y fin del break.","error"); return; }
+    try {
+      await api("/api/breaks","POST",
+        Object.assign({ timeEntryId: Number(timeEntryId) }, buildBreakRange(dayIso, tin, tout)));
+      flash($("entriesMsg"),"Break agregado.","ok");
+      loadEntries();
+    } catch(err){ handle(err,$("entriesMsg")); }
+  }
+
+  async function deleteBreak(id){
+    flash($("entriesMsg"),"");
+    if(!confirm("¿Eliminar este break? Las horas del día se recalculan.")) return;
+    try {
+      await api("/api/breaks/"+id,"DELETE");
+      flash($("entriesMsg"),"Break eliminado.","ok");
       loadEntries();
     } catch(err){ handle(err,$("entriesMsg")); }
   }

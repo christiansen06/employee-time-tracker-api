@@ -27,6 +27,8 @@ public class BreakService {
     private final BreakEntryRepository breakEntryRepository;
     private final TimeEntryRepository timeEntryRepository;
     private final CurrentEmployeeService currentEmployeeService;
+    private final AuditLogService auditLogService;
+    private final PaidPeriodGuard paidPeriodGuard;
 
     /** Jornada "abierta": fichada y aun no finalizada (incluye estar en break). */
     private static final List<TimeEntryStatus> OPEN_STATUSES =
@@ -85,6 +87,164 @@ public class BreakService {
                 .stream()
                 .map(this::mapToDTO)
                 .toList();
+    }
+
+    // ---------- ADMIN: correccion manual de breaks ----------
+
+    /**
+     * Agrega un break que el empleado nunca registro (se lo tomo pero no
+     * lo ficho). Nace ya cerrado.
+     */
+    public BreakResponseDTO createManualBreak(Long timeEntryId,
+                                              LocalDateTime start,
+                                              LocalDateTime end) {
+
+        TimeEntry timeEntry = timeEntryRepository.findById(timeEntryId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Time entry not found with id: " + timeEntryId));
+
+        assertEditable(timeEntry);
+        validateBreakWindow(timeEntry, start, end, null);
+
+        BreakEntry saved = breakEntryRepository.save(BreakEntry.builder()
+                .breakStart(start)
+                .breakEnd(end)
+                .durationMinutes(Duration.between(start, end).toMinutes())
+                .breakStatus(BreakStatus.FINISHED)
+                .timeEntry(timeEntry)
+                .build());
+
+        auditLogService.record("BREAK", saved.getId(), "CREATE",
+                "manual: timeEntryId=" + timeEntryId
+                        + ", " + start + " -> " + end);
+
+        return mapToDTO(saved);
+    }
+
+    /**
+     * Corrige el horario de un break. Caso tipico: el empleado volvio a
+     * trabajar y se olvido de cerrarlo, asi que el break quedo abierto o
+     * con una duracion que no es real.
+     */
+    public BreakResponseDTO updateBreak(Long breakId,
+                                        LocalDateTime start,
+                                        LocalDateTime end) {
+
+        BreakEntry breakEntry = breakEntryRepository.findById(breakId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Break entry not found with id: " + breakId));
+
+        TimeEntry timeEntry = breakEntry.getTimeEntry();
+        assertEditable(timeEntry);
+        validateBreakWindow(timeEntry, start, end, breakId);
+
+        auditLogService.record("BREAK", breakId, "UPDATE",
+                "before: " + breakEntry.getBreakStart() + " -> " + breakEntry.getBreakEnd()
+                        + " | after: " + start + " -> " + end);
+
+        breakEntry.setBreakStart(start);
+        breakEntry.setBreakEnd(end);
+        breakEntry.setDurationMinutes(Duration.between(start, end).toMinutes());
+        breakEntry.setBreakStatus(BreakStatus.FINISHED);
+
+        BreakResponseDTO dto = mapToDTO(breakEntryRepository.save(breakEntry));
+
+        reopenIfNoActiveBreak(timeEntry);
+
+        return dto;
+    }
+
+    /** Borra un break cargado por error. */
+    public void deleteBreak(Long breakId) {
+
+        BreakEntry breakEntry = breakEntryRepository.findById(breakId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Break entry not found with id: " + breakId));
+
+        TimeEntry timeEntry = breakEntry.getTimeEntry();
+        assertEditable(timeEntry);
+
+        auditLogService.record("BREAK", breakId, "DELETE",
+                "timeEntryId=" + (timeEntry != null ? timeEntry.getId() : null)
+                        + ", " + breakEntry.getBreakStart()
+                        + " -> " + breakEntry.getBreakEnd());
+
+        breakEntryRepository.delete(breakEntry);
+
+        reopenIfNoActiveBreak(timeEntry);
+    }
+
+    // ---------- Validaciones de la correccion manual ----------
+
+    /** Un break de un periodo ya liquidado no se toca (cambiaria lo pagado). */
+    private void assertEditable(TimeEntry timeEntry) {
+        if (timeEntry != null && timeEntry.getEmployee() != null
+                && timeEntry.getClockIn() != null) {
+            paidPeriodGuard.assertNotPaid(timeEntry.getEmployee().getId(),
+                    timeEntry.getClockIn().toLocalDate());
+        }
+    }
+
+    /**
+     * El break tiene que cerrar: fin posterior al inicio, contenido en la
+     * jornada y sin pisarse con otro break del mismo dia.
+     */
+    private void validateBreakWindow(TimeEntry timeEntry,
+                                     LocalDateTime start,
+                                     LocalDateTime end,
+                                     Long excludeBreakId) {
+
+        if (start == null || end == null) {
+            throw new IllegalArgumentException("breakStart and breakEnd are required.");
+        }
+        if (!end.isAfter(start)) {
+            throw new IllegalArgumentException("breakEnd must be after breakStart.");
+        }
+        if (timeEntry == null) {
+            return;
+        }
+        if (timeEntry.getClockIn() != null && start.isBefore(timeEntry.getClockIn())) {
+            throw new IllegalStateException(
+                    "The break cannot start before the shift starts.");
+        }
+        if (timeEntry.getClockOut() != null && end.isAfter(timeEntry.getClockOut())) {
+            throw new IllegalStateException(
+                    "The break cannot end after the shift ends.");
+        }
+
+        boolean overlaps = timeEntry.getBreaks() != null
+                && timeEntry.getBreaks().stream()
+                .filter(b -> excludeBreakId == null || !excludeBreakId.equals(b.getId()))
+                .filter(b -> b.getBreakStart() != null && b.getBreakEnd() != null)
+                .anyMatch(b -> start.isBefore(b.getBreakEnd())
+                        && end.isAfter(b.getBreakStart()));
+
+        if (overlaps) {
+            throw new IllegalStateException(
+                    "This break overlaps another break of the same shift.");
+        }
+    }
+
+    /**
+     * Si ya no queda ningun break abierto, la jornada vuelve a estado de
+     * trabajo: asi el empleado puede volver a fichar salida con normalidad.
+     */
+    private void reopenIfNoActiveBreak(TimeEntry timeEntry) {
+        if (timeEntry == null
+                || timeEntry.getStatus() != TimeEntryStatus.ON_BREAK
+                || timeEntry.getEmployee() == null) {
+            return;
+        }
+
+        boolean stillOnBreak = breakEntryRepository
+                .findFirstByTimeEntry_Employee_IdAndBreakStatus(
+                        timeEntry.getEmployee().getId(), BreakStatus.ON_BREAK)
+                .isPresent();
+
+        if (!stillOnBreak) {
+            timeEntry.setStatus(TimeEntryStatus.CLOCKED_IN);
+            timeEntryRepository.save(timeEntry);
+        }
     }
 
     // ---------- Logica + validaciones de negocio ----------
