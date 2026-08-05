@@ -61,6 +61,21 @@
     .range-btn{background:#0b1220;border:1px solid var(--border);color:var(--muted);}
     .range-btn.active{background:var(--turq);color:#06272b;border-color:var(--turq);}
     .chart-box{position:relative;height:260px;}
+    /* --- Planilla semanal: que se vea de un vistazo qué es trabajo y qué es break --- */
+    .row-shift td:first-child{border-left:3px solid var(--turq);}
+    .day-start td{border-top:2px solid #3f4a5f;}
+    .row-empty td:first-child,.row-empty td:nth-child(4){opacity:.5;}
+    .row-break td{background:rgba(245,158,11,.06);}
+    .row-break td:first-child{border-left:3px solid var(--amber);padding-left:24px;}
+    .row-break input[type=time]{border-color:rgba(245,158,11,.45);}
+    .row-break .actions button{padding:5px 9px;font-size:12px;}
+    .pill-break{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;
+      background:rgba(245,158,11,.18);color:#fcd34d;white-space:nowrap;}
+    .net-hours{font-weight:700;}
+    .net-calc{font-size:11px;color:var(--muted);margin-top:2px;}
+    .break-minus{color:#fcd34d;font-weight:600;}
+    .legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:12px;}
+    .legend .sw{display:inline-block;width:3px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px;}
     @media(max-width:560px){ .grid-form{grid-template-columns:1fr;} td .actions{flex-direction:column;} .chart-box{height:220px;} }
   </style>
 </head>
@@ -187,9 +202,13 @@
           <input type="date" id="entWeekDate" style="width:auto;">
           <button class="btn-ghost" id="entWeekNext" title="Semana siguiente">→</button>
         </div>
-        <div style="overflow-x:auto;margin-top:14px;">
+        <div class="legend">
+          <span><span class="sw" style="background:var(--turq);"></span>Jornada trabajada</span>
+          <span><span class="sw" style="background:var(--amber);"></span>☕ Break (se descuenta de las horas)</span>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px;">
           <table id="entriesTable">
-            <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Horas</th><th title="Se paga doble (feriado)">Doble</th><th></th></tr></thead>
+            <thead><tr><th>Día</th><th>Desde</th><th>Hasta</th><th>Horas</th><th title="Se paga doble (feriado)">Doble</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -613,9 +632,10 @@
     loadEntries();
   }
 
-  function entryRow(dayIso, dayLabel, e){
+  function entryRow(dayIso, dayLabel, e, isDayStart){
     // e = jornada existente o null (fila vacia para crear)
     const tr=document.createElement("tr");
+    tr.className = "row-shift" + (isDayStart ? " day-start" : "") + (e ? "" : " row-empty");
     const key = e ? e.timeEntryId : "new-"+dayIso+"-"+Math.random().toString(36).slice(2,7);
     const inVal = e && e.clockIn ? e.clockIn.substring(11,16) : "";
     const outVal = e && e.clockOut ? e.clockOut.substring(11,16) : "";
@@ -623,9 +643,14 @@
     if (e && e.clockIn && e.clockOut){
       const gross = Math.round((new Date(e.clockOut)-new Date(e.clockIn))/60000);
       const net = Math.max(0, gross - (e.breakMinutes||0));
-      horas = fmtHM(net);
-      if ((e.breakMinutes||0) > 0) horas += ' <span class="muted" title="Break descontado">☕'+fmtHM(e.breakMinutes)+'</span>';
+      horas = '<span class="net-hours">'+fmtHM(net)+'</span>';
+      // La cuenta explica de dónde sale el neto cuando hubo break.
+      if ((e.breakMinutes||0) > 0)
+        horas += '<div class="net-calc">'+fmtHM(gross)+' − '+fmtHM(e.breakMinutes)+' de break</div>';
+    } else if (!e) {
+      horas = '<span class="muted">sin jornada</span>';
     }
+    // Los avisos van junto al día, no mezclados con las horas.
     let badge = "";
     if (e && e.status !== "FINISHED") badge = ' <span class="badge warn">Abierta</span>';
     if (e && e.autoClosed) badge = ' <span class="badge warn" title="Cerrada automáticamente: corregí la salida real">⚠ Auto</span>';
@@ -641,10 +666,10 @@
         '<button class="btn-red" data-del="'+e.timeEntryId+'" title="Eliminar jornada">🗑</button>'
       : '<button class="btn-green" data-create="'+dayIso+'" data-key="'+key+'">Agregar</button>';
     tr.innerHTML =
-      '<td>'+dayLabel+'</td>'+
+      '<td><strong>'+dayLabel+'</strong>'+badge+'</td>'+
       '<td><input type="time" id="tin-'+key+'" value="'+inVal+'" style="width:110px;"></td>'+
       '<td><input type="time" id="tout-'+key+'" value="'+outVal+'" style="width:110px;"></td>'+
-      '<td>'+horas+badge+'</td>'+
+      '<td>'+horas+'</td>'+
       '<td>'+doble+'</td>'+
       '<td><div class="row actions">'+btn+'</div></td>';
     return tr;
@@ -668,13 +693,13 @@
       const label = DAY_NAMES[i]+" "+dIso.substring(8,10)+"/"+dIso.substring(5,7);
       const dayEntries = (byDay[dIso]||[]).sort((a,b)=>(a.clockIn||"").localeCompare(b.clockIn||""));
       if(!dayEntries.length){
-        tb.appendChild(entryRow(dIso, label, null));
+        tb.appendChild(entryRow(dIso, label, null, true));
       } else {
         dayEntries.forEach((e,idx)=>{
           const lbl = idx===0
             ? label+' <button class="btn-ghost" data-add="'+dIso+'" title="Agregar otro turno este día" style="padding:2px 8px;font-size:12px;">+</button>'
             : '<span class="muted">"</span>';
-          tb.appendChild(entryRow(dIso, lbl, e));
+          tb.appendChild(entryRow(dIso, lbl, e, idx===0));
           appendBreakRow(tb, e);
         });
       }
@@ -714,6 +739,7 @@
   /** Fila de break: inicio, fin, duración y acciones. b=null => alta. */
   function breakRow(timeEntryId, dayIso, b){
     const tr=document.createElement("tr");
+    tr.className = "row-break";
     const key = b ? ("b"+b.id) : ("bnew-"+timeEntryId+"-"+Math.random().toString(36).slice(2,7));
     const ini = b && b.breakStart ? b.breakStart.substring(11,16) : "";
     const fin = b && b.breakEnd ? b.breakEnd.substring(11,16) : "";
@@ -724,7 +750,8 @@
         dur = '<span class="badge warn" title="Quedó abierto: cargá la hora real de vuelta">⚠ sin cerrar</span>';
       else if (!b.durationMinutes)
         dur = '<span class="badge warn" title="Cerrado automáticamente en 0 min: cargá el horario real">⚠ revisar</span>';
-      else dur = '<span class="muted">'+fmtHM(b.durationMinutes)+'</span>';
+      // En negativo: deja claro que el break se resta de las horas del día.
+      else dur = '<span class="break-minus">−'+fmtHM(b.durationMinutes)+'</span>';
     }
 
     const btns = b
@@ -733,7 +760,7 @@
       : '<button class="btn-green" data-bcreate="'+timeEntryId+'" data-day="'+dayIso+'" data-key="'+key+'">Agregar</button>';
 
     tr.innerHTML =
-      '<td class="muted" style="font-size:12px;padding-left:20px;">☕ break</td>'+
+      '<td><span class="pill-break">☕ Break</span></td>'+
       '<td><input type="time" id="tin-'+key+'" value="'+ini+'" style="width:110px;"></td>'+
       '<td><input type="time" id="tout-'+key+'" value="'+fin+'" style="width:110px;"></td>'+
       '<td style="font-size:12px;">'+dur+'</td>'+
