@@ -135,11 +135,27 @@
     <section id="gridView" class="hidden">
       <div class="topbar">
         <div class="brand"><img class="logo" src="/icon.svg" alt=""><h1 style="font-size:22px;">BuBa</h1><span class="clock" id="clock"></span></div>
-        <button class="btn-ghost" id="resetDeviceBtn">Dispositivo</button>
+        <div class="row" style="display:flex;gap:8px;">
+          <button class="btn-ghost" id="scheduleBtn">📅 Horarios</button>
+          <button class="btn-ghost" id="resetDeviceBtn">Dispositivo</button>
+        </div>
       </div>
       <p class="subtitle">Tocá tu nombre para fichar</p>
       <div class="emp-grid" id="empGrid"></div>
       <div id="gridMsg" class="msg error"></div>
+    </section>
+
+    <!-- HORARIOS (solo lectura) -->
+    <section id="scheduleView" class="hidden">
+      <div class="topbar">
+        <div class="brand"><img class="logo" src="/icon.svg" alt=""><h1 style="font-size:22px;">Horarios</h1></div>
+        <button class="btn-ghost" id="schBackBtn">← Volver</button>
+      </div>
+      <p class="subtitle" id="schSubtitle">Semana</p>
+      <div style="overflow-x:auto;">
+        <table id="kioskSchTable" style="width:100%;border-collapse:collapse;"></table>
+      </div>
+      <div id="schViewMsg" class="msg error"></div>
     </section>
 
     <!-- PIN -->
@@ -169,6 +185,7 @@
         <button class="btn-amber" id="aBreakOut">Terminar break</button>
       </div>
       <button class="btn-ghost" style="width:100%;margin-top:14px;" id="aHours">Mis horas de esta semana</button>
+      <button class="btn-ghost" style="width:100%;margin-top:10px;" id="aSchedule">📅 Mi horario de la semana</button>
       <div id="aHoursBox" style="display:none;margin-top:12px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--border);">
         <div class="meta" id="aHoursMeta" style="margin-top:0;"></div>
         <div class="wk" id="aHoursGrid"></div>
@@ -421,8 +438,74 @@
     $("actBackBtn").addEventListener("click", showGrid);
 
     // ---------- VISTAS ----------
-    const VIEWS = ["setupView","gridView","pinView","actionView","confirmView"];
+    const VIEWS = ["setupView","gridView","scheduleView","pinView","actionView","confirmView"];
     function show(view) { VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view)); }
+
+    // ---------- HORARIOS (solo lectura, para que el equipo los consulte) ----------
+    const SCH_DAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+    function schMonday(){
+      const d = new Date();
+      const diff = (d.getDay() + 6) % 7;           // lunes = 0
+      d.setDate(d.getDate() - diff);
+      return d;
+    }
+    function schIso(d){
+      return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+
+             String(d.getDate()).padStart(2,"0");
+    }
+
+    async function openSchedule(highlightId){
+      show("scheduleView");
+      $("schViewMsg").style.display = "none";
+      const mon = schMonday();
+      const sun = new Date(mon); sun.setDate(sun.getDate()+6);
+      const from = schIso(mon), to = schIso(sun);
+      $("schSubtitle").textContent = "Semana del "+from.substring(8,10)+"/"+from.substring(5,7)+
+        " al "+to.substring(8,10)+"/"+to.substring(5,7);
+      try {
+        const week = await api("/api/kiosk/schedule?from="+from+"&to="+to);
+        renderKioskSchedule(week, highlightId);
+      } catch(err){
+        if (err.status === 401) { showSetup(); return; }
+        $("schViewMsg").textContent = err.message;
+        $("schViewMsg").style.display = "block";
+      }
+    }
+
+    function renderKioskSchedule(week, highlightId){
+      const t = $("kioskSchTable");
+      if(!week.rows.length){ t.innerHTML = '<tr><td>Todavía no hay horarios cargados.</td></tr>'; return; }
+      const th = 'padding:8px 6px;font-size:12px;color:var(--muted);text-align:center;'+
+                 'border-bottom:1px solid var(--border);';
+      let html = '<thead><tr><th style="'+th+'"></th>';
+      week.days.forEach((d,i)=>{
+        html += '<th style="'+th+'">'+SCH_DAYS[i]+'<div style="font-weight:400;font-size:10px;">'+
+          d.substring(8,10)+'/'+d.substring(5,7)+'</div></th>';
+      });
+      html += '</tr></thead><tbody>';
+      week.rows.forEach(r=>{
+        const mine = highlightId && String(r.employeeId) === String(highlightId);
+        html += '<tr style="'+(mine ? 'background:rgba(35,223,241,.10);' : '')+'">'+
+          '<td style="padding:8px 6px;font-size:13px;font-weight:600;white-space:nowrap;'+
+          'border-bottom:1px solid var(--border);'+(mine?'color:var(--turq);':'')+'">'+
+          r.employeeName.split(" ")[0]+'</td>';
+        r.cells.forEach(c=>{
+          const libre = !c || c.dayOff;
+          html += '<td style="padding:8px 4px;font-size:12px;text-align:center;'+
+            'border-bottom:1px solid var(--border);'+
+            (libre ? 'color:var(--muted);' : (c.startTime ? '' : 'color:var(--amber);'))+'">'+
+            (c ? (c.dayOff ? 'Franco' : c.label) : '–')+'</td>';
+        });
+        html += '</tr>';
+      });
+      t.innerHTML = html + '</tbody>';
+    }
+
+    $("scheduleBtn").addEventListener("click", ()=>openSchedule(null));
+    $("aSchedule").addEventListener("click", ()=>openSchedule(current.id));
+    $("schBackBtn").addEventListener("click", ()=>showGrid());
+
     function showSetup() { localStorage.removeItem(TOKEN_KEY); show("setupView"); }
     function showGrid() { current = { id:null, name:null, pin:"" }; $("gridMsg").style.display="none"; show("gridView"); loadGrid(); }
 

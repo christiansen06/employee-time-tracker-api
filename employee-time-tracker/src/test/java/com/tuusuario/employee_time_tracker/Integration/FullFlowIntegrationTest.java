@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -334,5 +335,48 @@ class FullFlowIntegrationTest {
 
         adminRefresh = objectMapper.readTree(res.getResponse().getContentAsString())
                 .get("refreshToken").asText();
+    }
+
+    /**
+     * Horario planificado: el admin lo arma, el kiosco solo lo lee y
+     * un rol sin permiso no lo toca.
+     */
+    @Test
+    @Order(9)
+    void adminBuildsTheWeeklyScheduleAndTheKioskCanOnlyReadIt() throws Exception {
+
+        String monday = "2026-09-07";
+
+        mockMvc.perform(put("/api/schedules")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + ",\"date\":\"" + monday
+                                + "\",\"startTime\":\"09:00\",\"endTime\":\"19:00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.label").value("9 a 19"))
+                .andExpect(jsonPath("$.plannedMinutes").value(600));
+
+        // Una celda sin horario, sin franco y sin nota no tiene sentido.
+        mockMvc.perform(put("/api/schedules")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + ",\"date\":\"2026-09-08\"}"))
+                .andExpect(status().isBadRequest());
+
+        // El kiosco ve la semana...
+        mockMvc.perform(get("/api/kiosk/schedule")
+                        .header("Authorization", "Bearer " + kioskToken)
+                        .param("from", monday).param("to", "2026-09-13"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[?(@.employeeId == " + employeeId + ")]"
+                        + ".cells[0].label").value(hasItem("9 a 19")));
+
+        // ...pero no puede modificarla.
+        mockMvc.perform(put("/api/schedules")
+                        .header("Authorization", "Bearer " + kioskToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + ",\"date\":\"" + monday
+                                + "\",\"dayOff\":true}"))
+                .andExpect(status().isForbidden());
     }
 }

@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/employees/**").hasRole("ADMIN")
                         .requestMatchers("/api/analytics/**").hasRole("ADMIN")
                         .requestMatchers("/api/payments/**").hasRole("ADMIN")
+                        .requestMatchers("/api/schedules/**").hasRole("ADMIN")
                         // Fichaje y breaks: ADMIN o EMPLOYEE.
                         .requestMatchers("/api/time-entries/**", "/api/breaks/**")
                                 .hasAnyRole("ADMIN", "EMPLOYEE")
