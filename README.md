@@ -127,6 +127,7 @@ Documentación completa en Swagger (`/swagger-ui.html`).
 | Fichaje propio (EMPLOYEE) | `/api/time-entries/me/*`, `/api/breaks/me/*` |
 | Jornadas (ADMIN) | ABM: `POST /api/time-entries` (alta manual de jornada olvidada, sin solapamientos), `PUT/DELETE /{id}`, `PATCH /{id}/paid-double` (feriado ×2) — todo queda en `audit_log` |
 | Breaks (ADMIN) | ABM del break puntual sin tocar la jornada: `POST /api/breaks`, `PUT/DELETE /{id}`. Valida que caiga dentro de la jornada y no se pise con otro break; al cerrar un break olvidado la jornada vuelve a estado de trabajo |
+| Horarios (ADMIN) | Armado del horario semanal: `GET/PUT/DELETE /api/schedules` y `POST /api/schedules/copy` para copiar la semana anterior. Cada celda es un horario, un franco o una nota libre; suma las horas planificadas por persona. El kiosco lo lee con `GET /api/kiosk/schedule`. Desde el panel se genera una imagen (Canvas, sin librerias) para compartir al grupo con el menu nativo del dispositivo |
 | Reportes (ADMIN) | `weekly-report(+/csv)`, `entries` y `employees/{id}/entries` (paginados) |
 | Analytics (ADMIN) | `summary(+/csv)`, `payroll(+/csv)` (liquidación), `payroll/{id}/message` (WhatsApp), `pending-fixes`, `punctuality`, `overtime(+/csv)`, `absences`, `trends`, `audit-log` |
 | Pagos (ADMIN) | `POST /api/payments` (cierra el período), `GET` (historial), `DELETE /{id}` (reabre) |

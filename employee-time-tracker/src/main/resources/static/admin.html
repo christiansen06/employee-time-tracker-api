@@ -50,7 +50,7 @@
     .msg { margin-top:12px; padding:10px; border-radius:8px; font-size:14px; display:none; }
     .msg.error{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.4);}
     .msg.ok{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.4);}
-    .hidden{display:none;}
+    .hidden{display:none !important;}
     .hours-big{font-size:30px;font-weight:700;}
     .actions button{padding:7px 10px;font-size:13px;}
     .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
@@ -112,6 +112,7 @@
       <button class="tab" data-tab="ahora">🟢 Ahora</button>
       <button class="tab" data-tab="reportes">📋 Fichajes</button>
       <button class="tab" data-tab="pagos">💵 Pagos</button>
+      <button class="tab" data-tab="horarios">🗓 Horarios</button>
       <button class="tab" data-tab="analisis">📊 Análisis</button>
     </div>
 
@@ -273,6 +274,37 @@
       </div>
     </div>
 
+
+    <!-- HORARIOS -->
+    <div id="tab-horarios" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;">Horarios <span class="muted" style="font-size:13px;">(lo que planificás para la semana)</span></h3>
+          <div class="row">
+            <button class="btn-ghost" id="schPrev" title="Semana anterior">←</button>
+            <input type="date" id="schWeekDate" style="width:auto;">
+            <button class="btn-ghost" id="schNext" title="Semana siguiente">→</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn-primary" id="schShare">📷 Compartir imagen</button>
+          <button class="btn-ghost" id="schCopyPrev" title="Traer los turnos de la semana pasada">⧉ Copiar semana anterior</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:14px;">
+          <table id="schTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="schMsg" class="msg"></div>
+        <p class="muted" style="font-size:12px;margin-bottom:0;">
+          Tocá cualquier casillero para cargar el turno. <strong>Franco</strong> marca el día libre y
+          la <strong>nota</strong> sirve para lo que no es un horario (ej.: <em>Mossa</em>).
+          La columna <strong>Total</strong> suma las horas planificadas de cada uno, para repartir parejo.
+        </p>
+      </div>
+    </div>
+
     <!-- ANALISIS -->
     <div id="tab-analisis" class="hidden">
       <div class="card">
@@ -335,6 +367,34 @@
     </div>
   </section>
 </div>
+
+
+  <!-- Editor de una celda del horario -->
+  <div id="schEditor" class="hidden" style="position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div class="card" style="max-width:400px;width:100%;margin:0;">
+      <h3 style="margin-top:0;" id="schEditorTitle">Turno</h3>
+      <div id="schPresets" class="row" style="margin-bottom:12px;"></div>
+      <label>Horario</label>
+      <div class="row">
+        <input type="time" id="schStart" style="width:auto;">
+        <span class="muted">a</span>
+        <input type="time" id="schEnd" style="width:auto;">
+      </div>
+      <label style="margin-top:12px;">Nota (opcional)</label>
+      <input type="text" id="schNote" maxlength="60" placeholder="Ej.: Mossa">
+      <div id="schEditorMsg" class="msg"></div>
+      <div class="row" style="margin-top:14px;justify-content:space-between;">
+        <div class="row">
+          <button class="btn-green" id="schSave">Guardar</button>
+          <button class="btn-ghost" id="schOff">🌙 Franco</button>
+        </div>
+        <div class="row">
+          <button class="btn-red" id="schClear" title="Vaciar el casillero">🗑</button>
+          <button class="btn-ghost" id="schCancel">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script src="/assets/chart.umd.js"></script>
 <script>
@@ -399,7 +459,7 @@
 
   // TABS
   const TAB_KEY = "buba_admin_tab";
-  const TAB_NAMES = ["empleados","ahora","reportes","pagos","analisis"];
+  const TAB_NAMES = ["empleados","ahora","reportes","pagos","horarios","analisis"];
 
   function activateTab(name){
     if (!TAB_NAMES.includes(name)) name = "empleados";
@@ -409,6 +469,7 @@
     if (name==="ahora") loadNow();
     if (name==="reportes") loadEmpOptions();
     if (name==="pagos"){ setDefaultPayRange(); loadPayments(); }
+    if (name==="horarios"){ setDefaultScheduleWeek(); loadSchedule(); }
     if (name==="analisis") loadAnalytics();
   }
   document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.tab)));
@@ -1053,6 +1114,333 @@
       URL.revokeObjectURL(url);
     } catch(err){ handle(err,$("payMsg")); }
   });
+
+
+  // ================= HORARIOS =================
+  // Lo PLANIFICADO para la semana: se arma acá y se comparte como imagen
+  // al grupo del equipo.
+  let schWeek = null;            // ultimo tablero traido del backend
+  let schCell = { empId:null, empName:"", date:null, cell:null };
+
+  function setDefaultScheduleWeek(){
+    if ($("schWeekDate").value) return;
+    $("schWeekDate").value = isoDate(mondayOf(new Date().toISOString().substring(0,10)));
+  }
+
+  function schRange(){
+    const monday = mondayOf($("schWeekDate").value);
+    const sunday = new Date(monday); sunday.setDate(sunday.getDate()+6);
+    return { from: isoDate(monday), to: isoDate(sunday) };
+  }
+
+  function shiftScheduleWeek(days){
+    const d = new Date($("schWeekDate").value+"T00:00:00");
+    d.setDate(d.getDate()+days);
+    $("schWeekDate").value = isoDate(d);
+    loadSchedule();
+  }
+
+  async function loadSchedule(){
+    flash($("schMsg"),"");
+    const r = schRange();
+    try {
+      schWeek = await api("/api/schedules?from="+r.from+"&to="+r.to);
+    } catch(err){ handle(err,$("schMsg")); return; }
+    renderSchedule();
+  }
+
+  function renderSchedule(){
+    const table = $("schTable");
+    if(!schWeek || !schWeek.rows.length){
+      table.querySelector("thead").innerHTML = "";
+      table.querySelector("tbody").innerHTML =
+        '<tr><td class="muted">No hay empleados activos.</td></tr>';
+      return;
+    }
+    let head = '<tr><th></th>';
+    schWeek.days.forEach((d,i)=>{
+      head += '<th style="text-align:center;">'+DAY_NAMES[i]+
+        '<div class="muted" style="font-weight:400;font-size:11px;">'+
+        d.substring(8,10)+'/'+d.substring(5,7)+'</div></th>';
+    });
+    head += '<th style="text-align:center;">Total</th></tr>';
+    table.querySelector("thead").innerHTML = head;
+
+    let body = "";
+    schWeek.rows.forEach(row=>{
+      body += '<tr><td style="white-space:nowrap;"><strong>'+row.employeeName+'</strong></td>';
+      row.cells.forEach((c,i)=>{
+        body += '<td style="text-align:center;padding:4px;">'+schCellButton(row,i,c)+'</td>';
+      });
+      body += '<td style="text-align:center;white-space:nowrap;">'+
+        (row.plannedMinutes ? '<strong>'+fmtHM(row.plannedMinutes)+'</strong>'
+                            : '<span class="muted">–</span>')+'</td></tr>';
+    });
+    table.querySelector("tbody").innerHTML = body;
+
+    table.querySelectorAll("button[data-emp]").forEach(b=>
+      b.addEventListener("click",()=>openScheduleCell(
+        Number(b.dataset.emp), b.dataset.name, b.dataset.date)));
+  }
+
+  /** Cada casillero es un botón: vacío invita a cargar, cargado muestra el turno. */
+  function schCellButton(row, dayIndex, c){
+    const date = schWeek.days[dayIndex];
+    const base = 'data-emp="'+row.employeeId+'" data-name="'+row.employeeName+
+      '" data-date="'+date+'" style="width:100%;padding:8px 6px;font-size:13px;';
+    if(!c) return '<button class="btn-ghost" '+base+'color:var(--muted);">+</button>';
+    if(c.dayOff) return '<button class="btn-ghost" '+base+
+      'color:var(--muted);background:#0b1220;">Franco</button>';
+    const esNota = !c.startTime;
+    return '<button class="btn-ghost" '+base+
+      (esNota ? 'color:#fcd34d;border-color:rgba(245,158,11,.45);'
+              : 'color:var(--text);border-color:rgba(34,211,238,.4);')+
+      'font-weight:600;">'+c.label+'</button>';
+  }
+
+  // ---- Editor de una celda ----
+  function openScheduleCell(empId, empName, date){
+    const row = schWeek.rows.find(r=>r.employeeId===empId);
+    const idx = schWeek.days.indexOf(date);
+    const cell = row ? row.cells[idx] : null;
+    schCell = { empId, empName, date, cell };
+
+    $("schEditorTitle").textContent = empName.split(" ")[0]+" · "+
+      DAY_NAMES[idx]+" "+date.substring(8,10)+"/"+date.substring(5,7);
+    $("schStart").value = cell && cell.startTime ? cell.startTime.substring(0,5) : "";
+    $("schEnd").value   = cell && cell.endTime   ? cell.endTime.substring(0,5)   : "";
+    $("schNote").value  = cell && cell.note ? cell.note : "";
+    $("schClear").style.display = cell ? "" : "none";
+    flash($("schEditorMsg"),"");
+    renderSchedulePresets();
+    $("schEditor").classList.remove("hidden");
+  }
+
+  /** Atajos con los horarios que ya se usaron esa semana: un toque y listo. */
+  function renderSchedulePresets(){
+    const usados = {};
+    (schWeek.rows||[]).forEach(r=>(r.cells||[]).forEach(c=>{
+      if(c && c.startTime && c.endTime){
+        const k = c.startTime.substring(0,5)+"|"+c.endTime.substring(0,5);
+        usados[k] = (usados[k]||0)+1;
+      }
+    }));
+    const top = Object.entries(usados).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    $("schPresets").innerHTML = top.map(([k])=>{
+      const [ini,fin]=k.split("|");
+      return '<button class="btn-ghost" data-preset="'+k+
+        '" style="padding:5px 10px;font-size:12px;">'+hhShort(ini)+' a '+hhShort(fin)+'</button>';
+    }).join("");
+    $("schPresets").querySelectorAll("button[data-preset]").forEach(b=>
+      b.addEventListener("click",()=>{
+        const [ini,fin]=b.dataset.preset.split("|");
+        $("schStart").value=ini; $("schEnd").value=fin;
+      }));
+  }
+
+  function hhShort(hhmm){
+    const [h,m]=hhmm.split(":");
+    return m==="00" ? String(Number(h)) : Number(h)+":"+m;
+  }
+
+  function closeScheduleEditor(){ $("schEditor").classList.add("hidden"); }
+
+  async function saveScheduleCell(dayOff){
+    const body = {
+      employeeId: schCell.empId,
+      date: schCell.date,
+      dayOff: !!dayOff,
+      note: $("schNote").value.trim() || null,
+      startTime: dayOff ? null : ($("schStart").value || null),
+      endTime:   dayOff ? null : ($("schEnd").value   || null)
+    };
+    if(!dayOff && !body.note && (!body.startTime || !body.endTime)){
+      flash($("schEditorMsg"),"Cargá el horario, marcá Franco o escribí una nota.","error");
+      return;
+    }
+    try {
+      await api("/api/schedules","PUT",body);
+      closeScheduleEditor();
+      loadSchedule();
+    } catch(err){ handle(err,$("schEditorMsg")); }
+  }
+
+  async function clearScheduleCell(){
+    try {
+      await api("/api/schedules?employeeId="+schCell.empId+"&date="+schCell.date,"DELETE");
+      closeScheduleEditor();
+      loadSchedule();
+    } catch(err){ handle(err,$("schEditorMsg")); }
+  }
+
+  async function copyPreviousWeek(){
+    const r = schRange();
+    const prev = new Date(r.from+"T00:00:00"); prev.setDate(prev.getDate()-7);
+    const etiqueta = isoDate(prev).substring(8,10)+"/"+isoDate(prev).substring(5,7);
+    if(!confirm("¿Traer los turnos de la semana del "+etiqueta+
+      "? Se reemplaza lo que haya cargado en esta semana.")) return;
+    try {
+      await api("/api/schedules/copy","POST",{ fromMonday: isoDate(prev), toMonday: r.from });
+      flash($("schMsg"),"Semana copiada. Ajustá lo que haga falta.","ok");
+      loadSchedule();
+    } catch(err){ handle(err,$("schMsg")); }
+  }
+
+  // ---- Imagen para el grupo ----
+  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio",
+                 "agosto","septiembre","octubre","noviembre","diciembre"];
+
+  /**
+   * Dibuja el tablero en un canvas. Fondo claro a propósito: se lee mejor
+   * en el celular y a la luz del local que la estética oscura del panel.
+   */
+  function buildScheduleCanvas(){
+    const S = 2;                                   // nitidez en pantallas retina
+    const NAME_W = 150, DAY_W = 118, TOTAL_W = 86;
+    const PAD = 22, HEAD_H = 86, ROW_H = 46, COL_H = 46, FOOT_H = 34;
+    const rows = schWeek.rows;
+    const W = PAD*2 + NAME_W + DAY_W*7 + TOTAL_W;
+    const H = PAD + HEAD_H + COL_H + ROW_H*rows.length + FOOT_H + PAD;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W*S; canvas.height = H*S;
+    const c = canvas.getContext("2d");
+    c.scale(S,S);
+    c.textBaseline = "middle";
+
+    c.fillStyle = "#ffffff"; c.fillRect(0,0,W,H);
+
+    // Titulo
+    const d1 = new Date(schWeek.from+"T00:00:00"), d2 = new Date(schWeek.to+"T00:00:00");
+    c.fillStyle = "#0f172a";
+    c.font = "700 26px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    c.fillText("Horarios BuBa", PAD, PAD+20);
+    c.fillStyle = "#64748b";
+    c.font = "400 15px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    c.fillText("Semana del "+d1.getDate()+" al "+d2.getDate()+" de "+MESES[d2.getMonth()],
+      PAD, PAD+48);
+
+    const x0 = PAD, y0 = PAD + HEAD_H;
+
+    // Encabezado de dias
+    c.fillStyle = "#22d3ee";
+    c.fillRect(x0+NAME_W, y0, DAY_W*7 + TOTAL_W, COL_H);
+    schWeek.days.forEach((d,i)=>{
+      const x = x0 + NAME_W + DAY_W*i;
+      c.fillStyle = "#06272b";
+      c.font = "700 15px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      c.textAlign = "center";
+      c.fillText(DAY_NAMES[i], x+DAY_W/2, y0+COL_H/2-8);
+      c.font = "400 12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      c.fillText(d.substring(8,10)+"/"+d.substring(5,7), x+DAY_W/2, y0+COL_H/2+10);
+    });
+    c.fillStyle = "#06272b";
+    c.font = "700 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    c.textAlign = "center";
+    c.fillText("Total", x0+NAME_W+DAY_W*7+TOTAL_W/2, y0+COL_H/2);
+
+    // Filas
+    rows.forEach((row,ri)=>{
+      const y = y0 + COL_H + ROW_H*ri;
+      if (ri % 2 === 1){ c.fillStyle = "#f8fafc"; c.fillRect(x0, y, W-PAD*2, ROW_H); }
+
+      c.fillStyle = "#0f172a";
+      c.textAlign = "left";
+      c.font = "600 15px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      fitText(c, row.employeeName.split(" ")[0], NAME_W-14, 15, x0+6, y+ROW_H/2, 600);
+
+      row.cells.forEach((cell,i)=>{
+        const x = x0 + NAME_W + DAY_W*i;
+        c.textAlign = "center";
+        if(!cell){ return; }
+        if(cell.dayOff){
+          c.fillStyle = "#94a3b8";
+          c.font = "400 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+          c.fillText("Franco", x+DAY_W/2, y+ROW_H/2);
+        } else {
+          c.fillStyle = cell.startTime ? "#0f172a" : "#b45309";
+          fitText(c, cell.label, DAY_W-12, 15, x+DAY_W/2, y+ROW_H/2, 600);
+        }
+      });
+
+      c.textAlign = "center";
+      c.fillStyle = "#334155";
+      c.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      c.fillText(row.plannedMinutes ? fmtHM(row.plannedMinutes)+" hs" : "–",
+        x0+NAME_W+DAY_W*7+TOTAL_W/2, y+ROW_H/2);
+    });
+
+    // Lineas de la grilla
+    c.strokeStyle = "#e2e8f0"; c.lineWidth = 1;
+    const gridBottom = y0 + COL_H + ROW_H*rows.length;
+    for(let i=0;i<=8;i++){
+      const x = x0 + NAME_W + DAY_W*Math.min(i,7) + (i===8?TOTAL_W:0);
+      c.beginPath(); c.moveTo(x+0.5, y0); c.lineTo(x+0.5, gridBottom); c.stroke();
+    }
+    c.beginPath(); c.moveTo(x0+0.5, y0); c.lineTo(x0+0.5, gridBottom); c.stroke();
+    for(let i=0;i<=rows.length;i++){
+      const y = y0 + COL_H + ROW_H*i;
+      c.beginPath(); c.moveTo(x0, y+0.5); c.lineTo(W-PAD, y+0.5); c.stroke();
+    }
+
+    // Pie
+    c.textAlign = "left";
+    c.fillStyle = "#94a3b8";
+    c.font = "400 12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    c.fillText("Generado el "+new Date().toLocaleDateString("es-AR"), PAD, gridBottom+22);
+
+    return canvas;
+  }
+
+  /** Achica la tipografía hasta que el texto entre en el ancho disponible. */
+  function fitText(c, text, maxWidth, size, x, y, weight){
+    let s = size;
+    do {
+      c.font = weight+" "+s+"px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      if (c.measureText(text).width <= maxWidth) break;
+      s -= 1;
+    } while (s > 9);
+    c.fillText(text, x, y);
+  }
+
+  /**
+   * En celular y iPad abre el menú nativo: un toque y va al grupo de WhatsApp.
+   * (wa.me no sirve acá: sólo manda texto, no adjunta imágenes.)
+   */
+  async function shareSchedule(){
+    flash($("schMsg"),"");
+    if(!schWeek || !schWeek.rows.length){
+      flash($("schMsg"),"No hay nada para compartir todavía.","error"); return;
+    }
+    const canvas = buildScheduleCanvas();
+    canvas.toBlob(async (blob)=>{
+      const nombre = "horarios-"+schWeek.from+".png";
+      const file = new File([blob], nombre, { type:"image/png" });
+      if (navigator.canShare && navigator.canShare({ files:[file] })){
+        try {
+          await navigator.share({ files:[file], title:"Horarios BuBa",
+            text:"Horarios de la semana" });
+          return;
+        } catch(e){ if (e && e.name === "AbortError") return; }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = nombre; a.click();
+      URL.revokeObjectURL(url);
+      flash($("schMsg"),"Imagen descargada: ya la podés compartir en el grupo.","ok");
+    }, "image/png");
+  }
+
+  $("schPrev").addEventListener("click",()=>shiftScheduleWeek(-7));
+  $("schNext").addEventListener("click",()=>shiftScheduleWeek(7));
+  $("schWeekDate").addEventListener("change",loadSchedule);
+  $("schCopyPrev").addEventListener("click",copyPreviousWeek);
+  $("schSave").addEventListener("click",()=>saveScheduleCell(false));
+  $("schOff").addEventListener("click",()=>saveScheduleCell(true));
+  $("schClear").addEventListener("click",clearScheduleCell);
+  $("schCancel").addEventListener("click",closeScheduleEditor);
+  $("schEditor").addEventListener("click",(e)=>{ if(e.target.id==="schEditor") closeScheduleEditor(); });
+  $("schShare").addEventListener("click",shareSchedule);
 
   // ================= ANALISIS =================
   // Paleta validada sobre la superficie oscura del panel (contraste >= 3:1, CVD ok).

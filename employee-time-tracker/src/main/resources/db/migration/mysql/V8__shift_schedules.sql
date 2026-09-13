@@ -1,0 +1,19 @@
+-- Horario planificado: que turno le toca a cada empleado cada dia.
+-- Es lo PLANIFICADO (antes), distinto de time_entries que es lo FICHADO (despues).
+CREATE TABLE shift_schedules (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    employee_id BIGINT NOT NULL,
+    shift_date DATE NOT NULL,
+    start_time TIME,
+    end_time TIME,
+    day_off BOOLEAN NOT NULL DEFAULT FALSE,
+    note VARCHAR(60),
+    created_by VARCHAR(255),
+    created_at DATETIME(6),
+    updated_at DATETIME(6),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_shift_schedules_employee FOREIGN KEY (employee_id) REFERENCES employees (id),
+    CONSTRAINT uq_shift_schedules_employee_date UNIQUE (employee_id, shift_date)
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_shift_schedules_date ON shift_schedules (shift_date);

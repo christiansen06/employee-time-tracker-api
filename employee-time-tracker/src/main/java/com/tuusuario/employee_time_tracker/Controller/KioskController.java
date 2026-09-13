@@ -3,13 +3,17 @@ package com.tuusuario.employee_time_tracker.Controller;
 import com.tuusuario.employee_time_tracker.Model.Dto.CurrentStatusDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.KioskActionRequestDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.KioskEmployeeDTO;
+import com.tuusuario.employee_time_tracker.Model.Dto.ScheduleWeekDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.WeeklyHoursDetailDTO;
 import com.tuusuario.employee_time_tracker.Service.KioskService;
+import com.tuusuario.employee_time_tracker.Service.ScheduleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -23,6 +27,15 @@ import java.util.List;
 public class KioskController {
 
     private final KioskService kioskService;
+    private final ScheduleService scheduleService;
+
+    /** Horario de la semana, solo lectura: el equipo lo consulta en el local. */
+    @GetMapping("/schedule")
+    public ScheduleWeekDTO schedule(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return scheduleService.getWeek(from, to);
+    }
 
     @GetMapping("/employees")
     public List<KioskEmployeeDTO> employees() {
