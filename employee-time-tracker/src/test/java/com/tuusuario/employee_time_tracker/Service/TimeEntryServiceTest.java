@@ -50,7 +50,7 @@ class TimeEntryServiceTest {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(emp));
         when(timeEntryRepository.existsByEmployeeIdAndStatusIn(eq(1L), anyCollection()))
                 .thenReturn(false);
-        when(timeEntryRepository.save(any(TimeEntry.class)))
+        when(timeEntryRepository.saveAndFlush(any(TimeEntry.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         TimeEntrySummaryDTO dto = service.clockIn(1L);

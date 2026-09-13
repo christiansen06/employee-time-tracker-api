@@ -356,7 +356,11 @@
       if (!iso) return "";
       return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
     }
+    let lastStatus = null;      // para poder restaurar los botones tras un error
+    let actionBusy = false;     // congela los 4 botones mientras hay un pedido en vuelo
+
     function openActions(status) {
+      actionBusy = false;   // pantalla nueva: los botones arrancan libres
       $("actWho").textContent = current.name;
       renderActionState(status);
       $("actMsg").style.display = "none";
@@ -364,6 +368,7 @@
       show("actionView");
     }
     function renderActionState(s) {
+      lastStatus = s;
       const st = STATES[s.state] || STATES.NO_SHIFT;
       $("actState").textContent = st.text;
       $("actDot").style.background = st.color;
@@ -376,15 +381,26 @@
       $("aBreakIn").disabled  = s.state !== "CLOCKED_IN";
       $("aBreakOut").disabled = s.state !== "ON_BREAK";
     }
+    /** Deshabilita los 4 botones al instante, sin esperar la respuesta del
+     *  servidor: evita que un toque repetido (ansiedad, doble tap, lag de
+     *  red) dispare dos pedidos antes de que el primero termine. */
+    function freezeActionButtons(frozen) {
+      ["aClockIn","aClockOut","aBreakIn","aBreakOut"].forEach(id=>$(id).disabled = frozen);
+    }
     function bindAction(btnId, path, label) {
       $(btnId).addEventListener("click", async () => {
+        if (actionBusy) return;
+        actionBusy = true;
+        freezeActionButtons(true);
         $("actMsg").style.display = "none";
         try {
           await api(path, "POST", { employeeId: current.id, pin: current.pin });
-          confirmAndBack(label);
+          confirmAndBack(label);   // cambia de pantalla: no hace falta reactivar
         } catch (err) {
           $("actMsg").textContent = err.message; $("actMsg").style.display = "block";
-          if (err.status === 401) showSetup();
+          actionBusy = false;
+          if (err.status === 401) { showSetup(); return; }
+          if (lastStatus) renderActionState(lastStatus);   // vuelve al estado real
         }
       });
     }
@@ -455,7 +471,10 @@
              String(d.getDate()).padStart(2,"0");
     }
 
-    async function openSchedule(highlightId){
+    let scheduleReturnView = "gridView";
+
+    async function openSchedule(highlightId, returnView){
+      scheduleReturnView = returnView || "gridView";
       show("scheduleView");
       $("schViewMsg").style.display = "none";
       const mon = schMonday();
@@ -502,9 +521,10 @@
       t.innerHTML = html + '</tbody>';
     }
 
-    $("scheduleBtn").addEventListener("click", ()=>openSchedule(null));
-    $("aSchedule").addEventListener("click", ()=>openSchedule(current.id));
-    $("schBackBtn").addEventListener("click", ()=>showGrid());
+    $("scheduleBtn").addEventListener("click", ()=>openSchedule(null, "gridView"));
+    $("aSchedule").addEventListener("click", ()=>openSchedule(current.id, "actionView"));
+    // Vuelve adonde estaba: si vino desde su perfil, no lo saca (no re-pide PIN).
+    $("schBackBtn").addEventListener("click", ()=>show(scheduleReturnView));
 
     function showSetup() { localStorage.removeItem(TOKEN_KEY); show("setupView"); }
     function showGrid() { current = { id:null, name:null, pin:"" }; $("gridMsg").style.display="none"; show("gridView"); loadGrid(); }

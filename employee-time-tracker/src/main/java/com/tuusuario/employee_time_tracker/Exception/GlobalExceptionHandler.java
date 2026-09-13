@@ -2,6 +2,7 @@ package com.tuusuario.employee_time_tracker.Exception;
 
 import com.tuusuario.employee_time_tracker.Model.Dto.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -56,6 +57,26 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request, null);
+    }
+
+    /**
+     * Red de seguridad para violaciones de restricciones de la base (indices
+     * unicos, FKs) que no fueron atajadas puntualmente en el servicio, por
+     * ejemplo cuando dos pedidos casi simultaneos chocan contra un indice
+     * unico pensado justo para evitar ese duplicado. Es un conflicto de
+     * negocio, no un error interno: 409, no 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                "This action conflicts with another recent one. Please refresh and try again.",
+                request,
+                null
+        );
     }
 
     @ExceptionHandler(AuthenticationException.class)

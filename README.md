@@ -21,8 +21,9 @@ mañana.
 - KPIs del período: horas trabajadas, costo laboral estimado, promedio por
   jornada, % de llegadas tarde y ausencias.
 - Gráficos: tendencia diaria de horas y horas por empleado.
-- Puntualidad por empleado (vs hora esperada de entrada, con tolerancia
-  configurable) y horas extra (exceso diario y semanal).
+- Puntualidad por empleado: compara contra el horario planificado de ESE día
+  (`shift_schedules`) si lo tiene cargado, o contra un horario fijo de
+  respaldo (con tolerancia configurable); horas extra (exceso diario y semanal).
 - **Liquidación**: cuánto pagarle a cada empleado en el período (horas netas ×
   valor hora); las jornadas marcadas como **dobles** (feriados) cuentan ×2.
 - **Pagos**: marcar el período como pagado lo congela (las jornadas no se
@@ -36,8 +37,11 @@ mañana.
 - Flyway para migraciones de esquema (MySQL, PostgreSQL y H2).
 - Auditoría: `created_at`/`updated_at` en todas las tablas y bitácora
   `audit_log` de ediciones/borrados manuales de jornadas.
-- Actuator (`/actuator/health`), suite de ~50 tests (unitarios + integración
-  end-to-end) y CI en GitHub Actions.
+- Un empleado no puede quedar con dos jornadas (o dos breaks) abiertos a la
+  vez ni por toques repetidos casi simultáneos: además del chequeo de
+  negocio, un índice único en la base lo impide a nivel de fila.
+- Actuator (`/actuator/health`), suite de ~90 tests (unitarios + integración
+  end-to-end, incluida una prueba de concurrencia real) y CI en GitHub Actions.
 
 ## Cómo correr
 
