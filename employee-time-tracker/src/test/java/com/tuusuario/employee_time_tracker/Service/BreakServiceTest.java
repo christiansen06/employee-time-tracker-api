@@ -80,7 +80,7 @@ class BreakServiceTest {
                 anyLong(), anyCollection())).thenReturn(Optional.of(entry));
         when(timeEntryRepository.save(any(TimeEntry.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        when(breakEntryRepository.save(any(BreakEntry.class)))
+        when(breakEntryRepository.saveAndFlush(any(BreakEntry.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         BreakResponseDTO dto = service.startBreakByEmployeeId(1L);

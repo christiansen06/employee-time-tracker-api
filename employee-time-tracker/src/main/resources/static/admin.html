@@ -1560,10 +1560,10 @@
 
   function renderPunctuality(punct){
     const tb=$("punctTable").querySelector("tbody"); tb.innerHTML="";
-    if(!punct.length){ tb.innerHTML='<tr><td colspan="6" class="muted">Cargale a cada empleado su hora de entrada esperada (pestaña Empleados) para medir puntualidad.</td></tr>'; return; }
+    if(!punct.length){ tb.innerHTML='<tr><td colspan="6" class="muted">Cargá el horario esperado (🗓 Horarios) o la hora de entrada fija de cada empleado (pestaña Empleados) para medir puntualidad.</td></tr>'; return; }
     punct.forEach(p=>{
       const warn = p.latePercentage>=25 ? ' style="color:#fcd34d;"' : '';
-      tb.innerHTML += '<tr><td>'+p.employeeName+'</td><td>'+p.expectedClockIn.substring(0,5)+'</td>'+
+      tb.innerHTML += '<tr><td>'+p.employeeName+'</td><td>'+p.referenceLabel+'</td>'+
         '<td>'+p.daysEvaluated+'</td><td>'+p.lateArrivals+'</td>'+
         '<td'+warn+'>'+p.latePercentage.toFixed(0)+'%</td>'+
         '<td>'+(p.lateArrivals>0 ? p.avgLateMinutes.toFixed(0)+" min" : "–")+'</td></tr>';

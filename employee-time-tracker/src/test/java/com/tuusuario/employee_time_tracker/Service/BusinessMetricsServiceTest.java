@@ -6,9 +6,11 @@ import com.tuusuario.employee_time_tracker.Model.Dto.OvertimeDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
+import com.tuusuario.employee_time_tracker.Model.Entity.ShiftSchedule;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
+import com.tuusuario.employee_time_tracker.Repository.ShiftScheduleRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,7 @@ class BusinessMetricsServiceTest {
     @Mock private TimeEntryRepository timeEntryRepository;
     @Mock private EmployeeRepository employeeRepository;
     @Mock private com.tuusuario.employee_time_tracker.Repository.PaymentRepository paymentRepository;
+    @Mock private ShiftScheduleRepository shiftScheduleRepository;
 
     @InjectMocks private BusinessMetricsService service;
 
@@ -108,13 +111,61 @@ class BusinessMetricsServiceTest {
 
         List<PunctualityDTO> result = service.getPunctuality(monday, monday.plusDays(6));
 
-        // Beto no tiene hora esperada: queda fuera.
+        // Beto no tiene hora esperada (ni horario cargado, ni fija): queda fuera.
         assertThat(result).hasSize(1);
         PunctualityDTO anaP = result.get(0);
+        assertThat(anaP.getReferenceLabel()).isEqualTo("9:00");
         assertThat(anaP.getDaysEvaluated()).isEqualTo(3);
         assertThat(anaP.getLateArrivals()).isEqualTo(1);
         assertThat(anaP.getLatePercentage()).isEqualTo(33.33);
         assertThat(anaP.getAvgLateMinutes()).isEqualTo(30.0);
+    }
+
+    @Test
+    void punctualityUsesTheDayPlannedScheduleWhenAvailable() {
+        // Beto no tiene hora fija en su ficha, pero tiene horarios variables
+        // cargados: lunes entra a las 16, martes a las 10.
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
+                TimeEntry.builder().employee(beto)               // 16:15: tarde (15 min; el limite con tolerancia es 16:10)
+                        .clockIn(monday.atTime(16, 15))
+                        .clockOut(monday.atTime(20, 0))
+                        .status(TimeEntryStatus.FINISHED).build(),
+                TimeEntry.builder().employee(beto)               // 10:00: puntual
+                        .clockIn(monday.plusDays(1).atTime(10, 0))
+                        .clockOut(monday.plusDays(1).atTime(18, 0))
+                        .status(TimeEntryStatus.FINISHED).build()
+        ));
+        when(employeeRepository.findByActiveTrue()).thenReturn(List.of(beto));
+        when(shiftScheduleRepository.findByShiftDateBetween(any(), any())).thenReturn(List.of(
+                ShiftSchedule.builder().employee(beto).shiftDate(monday)
+                        .startTime(LocalTime.of(16, 0)).endTime(LocalTime.of(20, 0))
+                        .dayOff(false).build(),
+                ShiftSchedule.builder().employee(beto).shiftDate(monday.plusDays(1))
+                        .startTime(LocalTime.of(10, 0)).endTime(LocalTime.of(18, 0))
+                        .dayOff(false).build()
+        ));
+
+        List<PunctualityDTO> result = service.getPunctuality(monday, monday.plusDays(6));
+
+        assertThat(result).hasSize(1);
+        PunctualityDTO betoP = result.get(0);
+        assertThat(betoP.getReferenceLabel()).isEqualTo("Según horario cargado");
+        assertThat(betoP.getDaysEvaluated()).isEqualTo(2);
+        assertThat(betoP.getLateArrivals()).isEqualTo(1);
+        assertThat(betoP.getAvgLateMinutes()).isEqualTo(15.0);
+    }
+
+    @Test
+    void aDayWithoutAnyExpectedTimeIsNotEvaluated() {
+        // Beto ficha un dia sin horario cargado y sin hora fija en su ficha.
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
+                shift(beto, monday, 9, 17)
+        ));
+        when(employeeRepository.findByActiveTrue()).thenReturn(List.of(beto));
+
+        List<PunctualityDTO> result = service.getPunctuality(monday, monday.plusDays(6));
+
+        assertThat(result).isEmpty();
     }
 
     @Test

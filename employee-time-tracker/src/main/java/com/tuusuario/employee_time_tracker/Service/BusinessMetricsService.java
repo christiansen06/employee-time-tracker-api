@@ -11,9 +11,11 @@ import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.Payment;
+import com.tuusuario.employee_time_tracker.Model.Entity.ShiftSchedule;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
+import com.tuusuario.employee_time_tracker.Repository.ShiftScheduleRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import com.tuusuario.employee_time_tracker.Util.WorkTimeCalculator;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.IsoFields;
 import java.util.ArrayList;
@@ -47,6 +50,7 @@ public class BusinessMetricsService {
     private final TimeEntryRepository timeEntryRepository;
     private final EmployeeRepository employeeRepository;
     private final PaymentRepository paymentRepository;
+    private final ShiftScheduleRepository shiftScheduleRepository;
 
     /** Minutos de gracia antes de contar una llegada como tarde. */
     @Value("${app.analytics.late-tolerance-minutes:10}")
@@ -59,6 +63,9 @@ public class BusinessMetricsService {
     /** Tope semanal por defecto (48 hs: jornada legal argentina). */
     @Value("${app.analytics.default-weekly-hours-target:48}")
     private int defaultWeeklyHoursTarget;
+
+    /** Sin cero adelante en la hora, como el resto de la app ("9:00", no "09:00"). */
+    private static final DateTimeFormatter SHORT_TIME = DateTimeFormatter.ofPattern("H:mm");
 
     private record Range(LocalDate from, LocalDate to) {
     }
@@ -321,6 +328,14 @@ public class BusinessMetricsService {
 
     // ---------- Puntualidad ----------
 
+    /**
+     * Puntualidad de cada empleado vs. la hora de entrada esperada de CADA
+     * DIA (no un unico horario fijo): sale del horario planificado en
+     * shift_schedules si ese dia tiene uno cargado, y si no cae al horario
+     * fijo de la ficha del empleado (expectedClockIn) como respaldo para
+     * quien no usa la grilla de horarios. Un dia sin ninguno de los dos no
+     * se evalua.
+     */
     public List<PunctualityDTO> getPunctuality(LocalDate from, LocalDate to) {
         Range range = resolveRange(from, to);
 
@@ -330,12 +345,20 @@ public class BusinessMetricsService {
                 .filter(e -> e.getClockIn() != null)
                 .collect(Collectors.groupingBy(e -> e.getEmployee().getId()));
 
+        // Horario planificado por empleado y dia (excluye francos y celdas
+        // sin horario, como las que solo tienen una nota tipo "Mossa").
+        Map<Long, Map<LocalDate, LocalTime>> scheduledStartByEmployee =
+                shiftScheduleRepository.findByShiftDateBetween(range.from(), range.to()).stream()
+                        .filter(s -> s.getStartTime() != null && !Boolean.TRUE.equals(s.getDayOff()))
+                        .collect(Collectors.groupingBy(
+                                s -> s.getEmployee().getId(),
+                                Collectors.toMap(ShiftSchedule::getShiftDate,
+                                        ShiftSchedule::getStartTime,
+                                        (a, b) -> a)));
+
         List<PunctualityDTO> result = new ArrayList<>();
 
         for (Employee emp : employeeRepository.findByActiveTrue()) {
-            if (emp.getExpectedClockIn() == null) {
-                continue; // sin hora esperada no se mide
-            }
 
             Map<LocalDate, LocalTime> firstArrivalPerDay =
                     byEmployee.getOrDefault(emp.getId(), List.of()).stream()
@@ -344,26 +367,50 @@ public class BusinessMetricsService {
                                     e -> e.getClockIn().toLocalTime(),
                                     (a, b) -> a.isBefore(b) ? a : b));
 
-            LocalTime limit = emp.getExpectedClockIn()
-                    .plusMinutes(lateToleranceMinutes);
+            Map<LocalDate, LocalTime> scheduledStarts =
+                    scheduledStartByEmployee.getOrDefault(emp.getId(), Map.of());
 
-            List<Long> lateMinutes = firstArrivalPerDay.values().stream()
-                    .filter(arrival -> arrival.isAfter(limit))
-                    .map(arrival -> (long) ChronoUnit.MINUTES.between(
-                            emp.getExpectedClockIn(), arrival))
-                    .toList();
+            List<Long> lateMinutes = new ArrayList<>();
+            int evaluated = 0;
+            boolean usedSchedule = false;
 
-            int evaluated = firstArrivalPerDay.size();
+            for (Map.Entry<LocalDate, LocalTime> arrival : firstArrivalPerDay.entrySet()) {
+                LocalTime expected = scheduledStarts.get(arrival.getKey());
+                if (expected != null) {
+                    usedSchedule = true;
+                } else if (emp.getExpectedClockIn() != null) {
+                    expected = emp.getExpectedClockIn();
+                } else {
+                    continue; // ese dia no tiene con que comparar: no se evalua
+                }
+
+                evaluated++;
+                LocalTime limit = expected.plusMinutes(lateToleranceMinutes);
+                if (arrival.getValue().isAfter(limit)) {
+                    lateMinutes.add((long) ChronoUnit.MINUTES.between(expected, arrival.getValue()));
+                }
+            }
+
+            if (evaluated == 0) {
+                continue; // ningun dia con hora esperada: no aparece en el reporte
+            }
+
             int late = lateMinutes.size();
+
+            // Si algun dia evaluado vino de la grilla de horarios (que varia
+            // dia a dia), no hay un unico horario que mostrar. Solo cuando
+            // TODOS los dias evaluados usaron el horario fijo mostramos esa hora.
+            String referenceLabel = usedSchedule
+                    ? "Según horario cargado"
+                    : emp.getExpectedClockIn().format(SHORT_TIME);
 
             result.add(PunctualityDTO.builder()
                     .employeeId(emp.getId())
                     .employeeName(fullName(emp))
-                    .expectedClockIn(emp.getExpectedClockIn())
+                    .referenceLabel(referenceLabel)
                     .daysEvaluated(evaluated)
                     .lateArrivals(late)
-                    .latePercentage(evaluated > 0
-                            ? round2(late * 100.0 / evaluated) : 0)
+                    .latePercentage(round2(late * 100.0 / evaluated))
                     .avgLateMinutes(late > 0
                             ? round2(lateMinutes.stream()
                                     .mapToLong(Long::longValue).average().orElse(0))

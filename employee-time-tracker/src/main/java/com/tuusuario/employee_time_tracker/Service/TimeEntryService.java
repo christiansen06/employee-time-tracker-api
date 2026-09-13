@@ -14,6 +14,7 @@ import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -265,14 +266,20 @@ public class TimeEntryService {
 
     // ---------- Logica + validaciones de negocio ----------
 
+    private static final String ALREADY_OPEN_MESSAGE =
+            "Employee already has an open time entry. Clock out before clocking in again.";
+
     private TimeEntrySummaryDTO doClockIn(Employee employee) {
 
-        // No permitir dos jornadas abiertas a la vez.
+        // No permitir dos jornadas abiertas a la vez. Este chequeo por si solo
+        // no alcanza: dos toques casi simultaneos pueden pasarlo los dos
+        // antes de que cualquiera guarde (condicion de carrera). Por eso el
+        // guardado real esta protegido ademas por un indice unico en la base
+        // (ver V9__prevent_duplicate_open_entries.sql); saveAndFlush()
+        // fuerza el INSERT ya, para poder atajar esa violacion aca mismo.
         if (timeEntryRepository.existsByEmployeeIdAndStatusIn(
                 employee.getId(), OPEN_STATUSES)) {
-            throw new IllegalStateException(
-                    "Employee already has an open time entry. "
-                            + "Clock out before clocking in again.");
+            throw new IllegalStateException(ALREADY_OPEN_MESSAGE);
         }
 
         TimeEntry timeEntry = TimeEntry.builder()
@@ -281,7 +288,11 @@ public class TimeEntryService {
                 .employee(employee)
                 .build();
 
-        return mapToDTO(timeEntryRepository.save(timeEntry));
+        try {
+            return mapToDTO(timeEntryRepository.saveAndFlush(timeEntry));
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalStateException(ALREADY_OPEN_MESSAGE);
+        }
     }
 
     private TimeEntrySummaryDTO doClockOut(TimeEntry timeEntry) {

@@ -12,6 +12,7 @@ import com.tuusuario.employee_time_tracker.Model.Enums.TimeEntryStatus;
 import com.tuusuario.employee_time_tracker.Repository.BreakEntryRepository;
 import com.tuusuario.employee_time_tracker.Repository.TimeEntryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -249,16 +250,23 @@ public class BreakService {
 
     // ---------- Logica + validaciones de negocio ----------
 
+    private static final String ALREADY_ON_BREAK_MESSAGE =
+            "There is already an active break for this time entry.";
+
     private BreakResponseDTO doStartBreak(TimeEntry timeEntry) {
 
-        // No puede haber dos breaks activos en la misma jornada.
+        // No puede haber dos breaks activos en la misma jornada. Este chequeo
+        // por si solo no alcanza: dos toques casi simultaneos pueden pasarlo
+        // los dos antes de que cualquiera guarde (condicion de carrera). Por
+        // eso el guardado real esta protegido ademas por un indice unico en
+        // la base (ver V9__prevent_duplicate_open_entries.sql);
+        // saveAndFlush() fuerza el INSERT ya, para atajar esa violacion aca.
         boolean hasActiveBreak = timeEntry.getBreaks() != null
                 && timeEntry.getBreaks().stream()
                 .anyMatch(b -> b.getBreakStatus() == BreakStatus.ON_BREAK);
 
         if (hasActiveBreak) {
-            throw new IllegalStateException(
-                    "There is already an active break for this time entry.");
+            throw new IllegalStateException(ALREADY_ON_BREAK_MESSAGE);
         }
 
         // El empleado tiene que estar fichado (no finalizado, no ya en break).
@@ -276,7 +284,11 @@ public class BreakService {
         timeEntry.setStatus(TimeEntryStatus.ON_BREAK);
         timeEntryRepository.save(timeEntry);
 
-        return mapToDTO(breakEntryRepository.save(breakEntry));
+        try {
+            return mapToDTO(breakEntryRepository.saveAndFlush(breakEntry));
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalStateException(ALREADY_ON_BREAK_MESSAGE);
+        }
     }
 
     private BreakResponseDTO doEndBreak(BreakEntry breakEntry) {
