@@ -50,6 +50,13 @@ public class Payment {
     @Column(name = "hourly_rate", precision = 10, scale = 2)
     private BigDecimal hourlyRate;
 
+    /** Bono congelado al pagar (null en pagos anteriores al bono = sin bono). */
+    @Column(name = "bonus_minutes")
+    private Long bonusMinutes;
+
+    @Column(name = "bonus_amount", precision = 12, scale = 2)
+    private BigDecimal bonusAmount;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal amount;
 

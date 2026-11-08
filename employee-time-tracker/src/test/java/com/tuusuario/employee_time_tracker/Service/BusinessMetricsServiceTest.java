@@ -5,6 +5,7 @@ import com.tuusuario.employee_time_tracker.Model.Dto.AnalyticsSummaryDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.OvertimeDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
+import com.tuusuario.employee_time_tracker.Model.Entity.BonusDay;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.ShiftSchedule;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
@@ -40,6 +41,7 @@ class BusinessMetricsServiceTest {
     @Mock private EmployeeRepository employeeRepository;
     @Mock private com.tuusuario.employee_time_tracker.Repository.PaymentRepository paymentRepository;
     @Mock private ShiftScheduleRepository shiftScheduleRepository;
+    @Mock private com.tuusuario.employee_time_tracker.Repository.BonusDayRepository bonusDayRepository;
 
     @InjectMocks private BusinessMetricsService service;
 
@@ -273,6 +275,88 @@ class BusinessMetricsServiceTest {
         assertThat(msg).contains("*TOTAL: $2.400*");
     }
 
+    private BonusDay bonus(LocalDate day, String perHour, Employee... employees) {
+        return BonusDay.builder().id(9L).bonusDate(day)
+                .amountPerHour(new BigDecimal(perHour))
+                .employees(new java.util.HashSet<>(List.of(employees)))
+                .build();
+    }
+
+    @Test
+    void bonusDayAddsFixedAmountPerHourOnlyToChosenEmployees() {
+        Employee caro = Employee.builder().id(3L).name("Caro").lastName("Paz")
+                .email("caro@test.com").position("Caja").active(true)
+                .hourlyRate(new BigDecimal("100.00")).build();
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
+                shift(ana, monday, 9, 17),               // 8 hs con bono
+                shift(ana, monday.plusDays(1), 9, 13),   // 4 hs, dia sin bono
+                shift(caro, monday, 10, 14)              // 4 hs, no elegida
+        ));
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(bonus(monday, "1000", ana)));
+
+        var report = service.getPayroll(monday, monday.plusDays(6));
+
+        var anaRow = report.getRows().stream()
+                .filter(r -> r.getEmployeeId().equals(1L)).findFirst().orElseThrow();
+        assertThat(anaRow.getBonusMinutes()).isEqualTo(8 * 60);
+        assertThat(anaRow.getBonusAmount()).isEqualByComparingTo("8000.00");
+        // 12 hs x $100 + 8 hs x $1000 de bono
+        assertThat(anaRow.getAmount()).isEqualByComparingTo("9200.00");
+        assertThat(anaRow.getPayableMinutes()).isEqualTo(12 * 60); // el bono no suma horas
+
+        var caroRow = report.getRows().stream()
+                .filter(r -> r.getEmployeeId().equals(3L)).findFirst().orElseThrow();
+        assertThat(caroRow.getBonusMinutes()).isZero();
+        assertThat(caroRow.getAmount()).isEqualByComparingTo("400.00");
+
+        assertThat(report.getTotalAmount()).isEqualByComparingTo("9600.00");
+    }
+
+    @Test
+    void bonusIsNotDoubledOnHolidays() {
+        TimeEntry feriado = shift(ana, monday, 9, 13); // 4 hs feriado
+        feriado.setPaidDouble(true);
+        when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(feriado));
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(bonus(monday, "500", ana)));
+
+        var row = service.getPayroll(monday, monday.plusDays(6)).getRows().get(0);
+
+        // 4 hs x $100 x2 + 4 hs x $500 (simple)
+        assertThat(row.getAmount()).isEqualByComparingTo("2800.00");
+        assertThat(row.getBonusAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    @Test
+    void bonusIsReportedEvenWithoutHourlyRate() {
+        when(timeEntryRepository.findByClockInBetween(any(), any()))
+                .thenReturn(List.of(shift(beto, monday, 10, 12)));
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(bonus(monday, "1000", beto)));
+
+        var row = service.getPayroll(monday, monday.plusDays(6)).getRows().get(0);
+
+        assertThat(row.getAmount()).isNull();
+        assertThat(row.getBonusAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    @Test
+    void whatsappMessageShowsBonusDayAndTotal() {
+        when(employeeRepository.findById(1L)).thenReturn(java.util.Optional.of(ana));
+        when(timeEntryRepository.findByEmployeeIdAndClockInBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(shift(ana, monday, 9, 17)));
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(bonus(monday, "1000", ana)));
+
+        String msg = service.buildEmployeeMessage(1L, monday, monday.plusDays(6));
+
+        assertThat(msg).contains("Lun 01/06 · 09:00–17:00 · 8:00 hs 🎁 +$1.000/h");
+        assertThat(msg).contains("🎁 Bono: 8:00 hs → $8.000");
+        // 8 hs x $100 + $8.000
+        assertThat(msg).contains("*TOTAL: $8.800*");
+    }
+
     @Test
     void payrollCsvContainsTotalsRow() {
         when(timeEntryRepository.findByClockInBetween(any(), any())).thenReturn(List.of(
@@ -281,9 +365,9 @@ class BusinessMetricsServiceTest {
 
         String csv = service.buildPayrollCsv(monday, monday.plusDays(6));
 
-        assertThat(csv).contains("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Total");
+        assertThat(csv).contains("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Bono;Total");
         assertThat(csv).contains("Ana Lopez");
-        assertThat(csv).contains("TOTAL;;;8:00;;800.00");
+        assertThat(csv).contains("TOTAL;;;8:00;;;800.00");
     }
 
     @Test

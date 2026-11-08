@@ -22,7 +22,11 @@ public class PayrollRowDTO {
     double payableHours;
     /** Null si el empleado no tiene valor hora cargado. */
     BigDecimal hourlyRate;
-    /** payableMinutes/60 x hourlyRate. Null si no hay valor hora. */
+    /** Minutos netos trabajados en dias con bono (para este empleado). */
+    long bonusMinutes;
+    /** Total del bono (fijo por hora, no se duplica en feriados). */
+    BigDecimal bonusAmount;
+    /** payableMinutes/60 x hourlyRate + bonusAmount. Null si no hay valor hora. */
     BigDecimal amount;
     /** Pago exacto de este periodo, si ya se realizo (sino null). */
     Long paymentId;

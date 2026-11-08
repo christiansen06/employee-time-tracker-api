@@ -20,6 +20,8 @@ public class PaymentDTO {
     long doubleMinutes;
     long payableMinutes;
     BigDecimal hourlyRate;
+    long bonusMinutes;
+    BigDecimal bonusAmount;
     BigDecimal amount;
     String createdBy;
     LocalDateTime createdAt;

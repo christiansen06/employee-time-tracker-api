@@ -77,6 +77,12 @@
     .legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:12px;}
     .legend .sw{display:inline-block;width:3px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px;}
     @media(max-width:560px){ .grid-form{grid-template-columns:1fr;} td .actions{flex-direction:column;} .chart-box{height:220px;} }
+    .bonus-emps { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .bonus-emp { display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:999px;
+      border:1px solid var(--border); background:#0b1220; cursor:pointer; font-size:14px; user-select:none; }
+    .bonus-emp input { width:16px; height:16px; accent-color:var(--pink); margin:0; }
+    .bonus-emp.on { border-color:var(--pink); background:rgba(238,122,224,.15); }
+    .badge.bonus{background:rgba(238,122,224,.18);color:#f5b8ec;}
   </style>
 </head>
 <body>
@@ -252,11 +258,36 @@
         </div>
         <div style="overflow-x:auto;margin-top:14px;">
           <table id="payTable" style="display:none;">
-            <thead><tr><th>Empleado</th><th>Horas</th><th>Dobles</th><th>A pagar</th><th>Valor hora</th><th>Total</th><th></th></tr></thead>
+            <thead><tr><th>Empleado</th><th>Horas</th><th>Dobles</th><th>A pagar</th><th>Valor hora</th><th>🎁 Bono</th><th>Total</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div id="payMsg" class="msg"></div>
+      </div>
+
+      <div class="card" id="bonusCard">
+        <h3 style="margin-top:0;">🎁 Días con bono <span class="muted" style="font-size:13px;">(un extra por cada hora trabajada ese día; no se duplica en feriados)</span></h3>
+        <div class="row" style="align-items:flex-end;">
+          <div><label>Día</label><input type="date" id="bonDate" style="width:auto;"></div>
+          <div><label>Bono por hora ($)</label><input type="number" id="bonAmount" min="1" step="50" style="width:130px;"></div>
+          <div style="flex:1;min-width:180px;"><label>Motivo (opcional)</label><input type="text" id="bonNote" maxlength="120" placeholder="Food truck + local"></div>
+        </div>
+        <div class="row" style="justify-content:space-between;margin-top:10px;">
+          <label style="margin:0;">¿Quiénes lo cobran?</label>
+          <button class="btn-ghost" id="bonAll" style="padding:4px 10px;font-size:12px;">Marcar todos</button>
+        </div>
+        <div id="bonEmps" class="bonus-emps"></div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn-primary" id="bonSave">Guardar bono</button>
+          <button class="btn-ghost" id="bonCancel" style="display:none;">Cancelar edición</button>
+        </div>
+        <div id="bonMsg" class="msg"></div>
+        <div style="overflow-x:auto;margin-top:12px;">
+          <table id="bonTable">
+            <thead><tr><th>Día</th><th>Bono</th><th>Quiénes</th><th>Motivo</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card">
@@ -468,7 +499,7 @@
     localStorage.setItem(TAB_KEY, name);
     if (name==="ahora") loadNow();
     if (name==="reportes") loadEmpOptions();
-    if (name==="pagos"){ setDefaultPayRange(); loadPayments(); }
+    if (name==="pagos"){ setDefaultPayRange(); loadPayments(); loadBonusDays(); }
     if (name==="horarios"){ setDefaultScheduleWeek(); loadSchedule(); }
     if (name==="analisis") loadAnalytics();
   }
@@ -717,6 +748,9 @@
     if (e && e.autoClosed) badge = ' <span class="badge warn" title="Cerrada automáticamente: corregí la salida real">⚠ Auto</span>';
     const esDoble = e && e.paidDouble === true;
     if (esDoble) badge += ' <span class="badge warn" title="Este día se paga doble">×2</span>';
+    const bono = e && weekBonuses[dayIso];
+    if (bono && bono.employeeIds.map(String).includes(String(entriesEmpId)))
+      badge += ' <span class="badge bonus" title="Día con bono'+(bono.note?': '+bono.note:'')+'">🎁 +'+money(bono.amountPerHour)+'/h</span>';
     const doble = e
       ? '<input type="checkbox" data-double="'+e.timeEntryId+'" '+(esDoble?"checked":"")+
         ' title="Se paga doble (feriado)" style="width:18px;height:18px;accent-color:var(--amber);cursor:pointer;">'
@@ -736,6 +770,7 @@
     return tr;
   }
 
+  let weekBonuses = {}; // fecha -> dia con bono de la semana que se esta editando
   async function loadEntries(){
     flash($("entriesMsg"),"");
     const tb = $("entriesTable").querySelector("tbody"); tb.innerHTML="";
@@ -744,6 +779,8 @@
     const sunday = new Date(monday); sunday.setDate(sunday.getDate()+6);
     const to = isoDate(sunday);
     const page = await safe("/api/analytics/employees/"+entriesEmpId+"/entries?from="+from+"&to="+to+"&size=100");
+    weekBonuses = {};
+    ((await safe("/api/bonus-days?from="+from+"&to="+to)) || []).forEach(b=>weekBonuses[b.date]=b);
     const entries = Array.isArray(page) ? page : (page.content || []);
     const byDay = {};
     entries.forEach(e=>{ const d=(e.clockIn||"").substring(0,10); (byDay[d]=byDay[d]||[]).push(e); });
@@ -786,6 +823,7 @@
       detail = "+"+fmtHM(row.doubleMinutes)+" hs dobles ×2 = "
         +fmtHM(row.payableMinutes)+" hs a pagar · ";
     }
+    if (row.bonusMinutes>0) detail += "🎁 "+fmtHM(row.bonusMinutes)+" hs con bono · ";
     detail += "el monto está en 💵 Pagos";
     $("weekPayDetail").textContent = detail;
   }
@@ -968,6 +1006,7 @@
     const from=$("payFrom").value, to=$("payTo").value;
     if(!from||!to){ flash($("payMsg"),"Elegí el período.","error"); return; }
     try {
+      loadBonusDays();
       const rep = await api("/api/analytics/payroll?from="+from+"&to="+to);
       const table=$("payTable"); const tb=table.querySelector("tbody"); tb.innerHTML="";
       if(!rep.rows.length){ table.style.display="none"; flash($("payMsg"),"Sin jornadas cerradas en el período.","error"); return; }
@@ -986,11 +1025,12 @@
           '<td>'+(r.doubleMinutes>0?fmtHM(r.doubleMinutes)+' <span class="badge warn">×2</span>':'<span class="muted">–</span>')+'</td>'+
           '<td><strong>'+fmtHM(r.payableMinutes)+'</strong></td>'+
           '<td>'+(r.hourlyRate!=null?money(r.hourlyRate):'<span class="badge warn">cargar</span>')+'</td>'+
+          '<td>'+(r.bonusMinutes>0?money(r.bonusAmount)+'<div class="muted" style="font-size:12px;">'+fmtHM(r.bonusMinutes)+' hs</div>':'<span class="muted">–</span>')+'</td>'+
           '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>':'<span class="muted">–</span>')+'</td>'+
           '<td>'+acciones+'</td></tr>';
       });
       tb.innerHTML += '<tr><td><strong>TOTAL</strong></td><td></td><td></td>'+
-        '<td><strong>'+fmtHM(rep.totalPayableMinutes)+'</strong></td><td></td>'+
+        '<td><strong>'+fmtHM(rep.totalPayableMinutes)+'</strong></td><td></td><td></td>'+
         '<td><strong>'+money(rep.totalAmount)+'</strong></td><td></td></tr>';
       table.style.display="table";
 
@@ -1043,6 +1083,125 @@
     } catch(err){ handle(err,msgEl); }
   }
 
+  // DIAS CON BONO (se listan los del período de la liquidación)
+  const BONUS_AMOUNT_KEY = "ett_last_bonus_amount";
+  let bonusEditingId = null;
+  let bonusEmpsLoaded = false;
+
+  async function renderBonusEmps(selectedIds){
+    const box = $("bonEmps");
+    if (!bonusEmpsLoaded){
+      const emps = (await safe("/api/employees")) || [];
+      box.innerHTML = "";
+      emps.filter(e=>e.active!==false)
+        .sort((a,b)=>(a.name+" "+a.lastName).localeCompare(b.name+" "+b.lastName))
+        .forEach(e=>{
+          const lbl = document.createElement("label");
+          lbl.className = "bonus-emp";
+          lbl.innerHTML = '<input type="checkbox" value="'+e.id+'"> '+e.name+" "+e.lastName;
+          const cb = lbl.querySelector("input");
+          cb.addEventListener("change", ()=>lbl.classList.toggle("on", cb.checked));
+          box.appendChild(lbl);
+        });
+      bonusEmpsLoaded = true;
+    }
+    const sel = new Set((selectedIds||[]).map(String));
+    box.querySelectorAll("input").forEach(cb=>{
+      cb.checked = sel.has(cb.value);
+      cb.parentElement.classList.toggle("on", cb.checked);
+    });
+  }
+
+  function resetBonusForm(){
+    bonusEditingId = null;
+    $("bonDate").value = $("bonDate").value || new Date().toISOString().substring(0,10);
+    let last = null; try { last = localStorage.getItem(BONUS_AMOUNT_KEY); } catch(_){}
+    $("bonAmount").value = last || 1000;
+    $("bonNote").value = "";
+    $("bonSave").textContent = "Guardar bono";
+    $("bonCancel").style.display = "none";
+    renderBonusEmps([]);
+  }
+
+  $("bonAll").addEventListener("click", ()=>{
+    const cbs = [...$("bonEmps").querySelectorAll("input")];
+    const all = cbs.every(cb=>cb.checked);
+    cbs.forEach(cb=>{ cb.checked = !all; cb.parentElement.classList.toggle("on", cb.checked); });
+  });
+  $("bonCancel").addEventListener("click", ()=>{ resetBonusForm(); flash($("bonMsg"),""); });
+
+  $("bonSave").addEventListener("click", async ()=>{
+    flash($("bonMsg"),"");
+    const employeeIds = [...$("bonEmps").querySelectorAll("input:checked")].map(cb=>Number(cb.value));
+    const amount = parseFloat($("bonAmount").value);
+    const date = $("bonDate").value;
+    if(!date){ flash($("bonMsg"),"Elegí el día.","error"); return; }
+    if(!(amount>0)){ flash($("bonMsg"),"Poné un monto por hora mayor a 0.","error"); return; }
+    if(!employeeIds.length){ flash($("bonMsg"),"Marcá al menos un empleado.","error"); return; }
+    const body = { date, amountPerHour: amount, note: $("bonNote").value.trim(), employeeIds };
+    try {
+      if (bonusEditingId) await api("/api/bonus-days/"+bonusEditingId, "PUT", body);
+      else await api("/api/bonus-days", "POST", body);
+      try { localStorage.setItem(BONUS_AMOUNT_KEY, String(amount)); } catch(_){}
+      flash($("bonMsg"), "Bono guardado: "+money(amount)+"/h para "+employeeIds.length+" empleado(s).", "ok");
+      resetBonusForm();
+      loadBonusDays();
+      if ($("payTable").style.display !== "none") loadPayroll();
+    } catch(err){
+      if (err && err.status === 409) flash($("bonMsg"), "Ya hay un bono ese día (editalo desde la lista) o el período ya está pagado (reabrilo primero).", "error");
+      else handle(err,$("bonMsg"));
+    }
+  });
+
+  async function loadBonusDays(){
+    if (!bonusEmpsLoaded) resetBonusForm();
+    const from=$("payFrom").value, to=$("payTo").value;
+    const tb=$("bonTable").querySelector("tbody"); tb.innerHTML="";
+    if(!from||!to) return;
+    const days = (await safe("/api/bonus-days?from="+from+"&to="+to)) || [];
+    if(!days.length){
+      tb.innerHTML='<tr><td colspan="5" class="muted">No hay días con bono en este período.</td></tr>';
+      return;
+    }
+    days.forEach(d=>{
+      const dt = new Date(d.date+"T00:00:00");
+      const dayName = DAY_NAMES[(dt.getDay()+6)%7];
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td><strong>'+dayName+" "+d.date.substring(8,10)+"/"+d.date.substring(5,7)+'</strong></td>'+
+        '<td><span class="badge bonus">🎁 +'+money(d.amountPerHour)+'/h</span></td>'+
+        '<td>'+d.employeeNames.join(", ")+'</td>'+
+        '<td class="muted">'+(d.note||"–")+'</td>'+
+        '<td><div class="row actions">'+
+          '<button class="btn-ghost" data-bedit="'+d.id+'">Editar</button>'+
+          '<button class="btn-red" data-bdel="'+d.id+'" title="Borrar bono">🗑</button>'+
+        '</div></td>';
+      tr.querySelector("[data-bedit]").addEventListener("click", ()=>{
+        bonusEditingId = d.id;
+        $("bonDate").value = d.date;
+        $("bonAmount").value = d.amountPerHour;
+        $("bonNote").value = d.note || "";
+        renderBonusEmps(d.employeeIds);
+        $("bonSave").textContent = "Guardar cambios";
+        $("bonCancel").style.display = "inline-block";
+        $("bonusCard").scrollIntoView({behavior:"smooth"});
+      });
+      tr.querySelector("[data-bdel]").addEventListener("click", async ()=>{
+        if(!confirm("¿Borrar el bono del "+d.date+"?")) return;
+        try {
+          await api("/api/bonus-days/"+d.id, "DELETE");
+          flash($("bonMsg"),"Bono borrado.","ok");
+          loadBonusDays();
+          if ($("payTable").style.display !== "none") loadPayroll();
+        } catch(err){
+          if (err && err.status === 409) flash($("bonMsg"),"Ese período ya está pagado: reabrí el pago primero.","error");
+          else handle(err,$("bonMsg"));
+        }
+      });
+      tb.appendChild(tr);
+    });
+  }
+
   // Historial de pagos
   $("reloadPayments").addEventListener("click", loadPayments);
   async function loadPayments(){
@@ -1055,7 +1214,8 @@
       tb.innerHTML += '<tr><td>'+f(p.createdAt)+'</td><td>'+p.employeeName+'</td>'+
         '<td>'+f(p.from)+' → '+f(p.to)+'</td>'+
         '<td>'+fmtHM(p.payableMinutes)+(p.doubleMinutes>0?' <span class="badge warn">×2</span>':'')+'</td>'+
-        '<td>'+(p.amount!=null?'<strong>'+money(p.amount)+'</strong>':'<span class="muted">–</span>')+'</td>'+
+        '<td>'+(p.amount!=null?'<strong>'+money(p.amount)+'</strong>':'<span class="muted">–</span>')+
+          (p.bonusAmount>0?' <span class="badge bonus" title="Incluye bono">🎁 '+money(p.bonusAmount)+'</span>':'')+'</td>'+
         '<td><div class="row actions">'+
           '<button class="btn-green" data-pwa="'+p.employeeId+'" data-from="'+p.from+'" data-to="'+p.to+'">🟢 WA</button>'+
           '<button class="btn-red" data-preopen="'+p.id+'" title="Reabrir período">🗑</button>'+

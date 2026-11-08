@@ -9,10 +9,12 @@ import com.tuusuario.employee_time_tracker.Model.Dto.PayrollRowDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.PunctualityDTO;
 import com.tuusuario.employee_time_tracker.Model.Dto.TrendPointDTO;
 import com.tuusuario.employee_time_tracker.Exception.ResourceNotFoundException;
+import com.tuusuario.employee_time_tracker.Model.Entity.BonusDay;
 import com.tuusuario.employee_time_tracker.Model.Entity.Employee;
 import com.tuusuario.employee_time_tracker.Model.Entity.Payment;
 import com.tuusuario.employee_time_tracker.Model.Entity.ShiftSchedule;
 import com.tuusuario.employee_time_tracker.Model.Entity.TimeEntry;
+import com.tuusuario.employee_time_tracker.Repository.BonusDayRepository;
 import com.tuusuario.employee_time_tracker.Repository.EmployeeRepository;
 import com.tuusuario.employee_time_tracker.Repository.PaymentRepository;
 import com.tuusuario.employee_time_tracker.Repository.ShiftScheduleRepository;
@@ -51,6 +53,7 @@ public class BusinessMetricsService {
     private final EmployeeRepository employeeRepository;
     private final PaymentRepository paymentRepository;
     private final ShiftScheduleRepository shiftScheduleRepository;
+    private final BonusDayRepository bonusDayRepository;
 
     /** Minutos de gracia antes de contar una llegada como tarde. */
     @Value("${app.analytics.late-tolerance-minutes:10}")
@@ -152,16 +155,18 @@ public class BusinessMetricsService {
 
     /**
      * Liquidacion del periodo: minutos netos trabajados donde las jornadas
-     * marcadas como dobles (feriados) cuentan dos veces, por el valor hora.
+     * marcadas como dobles (feriados) cuentan dos veces, por el valor hora,
+     * mas el bono por hora de los dias con bono que le tocan a cada uno.
      */
     public PayrollReportDTO getPayroll(LocalDate from, LocalDate to) {
         Range range = resolveRange(from, to);
+        Map<LocalDate, BonusDay> bonuses = bonusDaysIn(range);
         Map<Long, List<TimeEntry>> byEmployee = countableEntries(range).stream()
                 .collect(Collectors.groupingBy(e -> e.getEmployee().getId()));
 
         List<PayrollRowDTO> rows = new ArrayList<>();
         for (List<TimeEntry> own : byEmployee.values()) {
-            rows.add(buildPayrollRow(own.get(0).getEmployee(), own, range));
+            rows.add(buildPayrollRow(own.get(0).getEmployee(), own, range, bonuses));
         }
 
         rows.sort(Comparator.comparingLong(PayrollRowDTO::getPayableMinutes).reversed());
@@ -196,10 +201,11 @@ public class BusinessMetricsService {
                 .filter(WorkTimeCalculator::isCountable)
                 .toList();
 
-        return buildPayrollRow(employee, own, range);
+        return buildPayrollRow(employee, own, range, bonusDaysIn(range));
     }
 
-    private PayrollRowDTO buildPayrollRow(Employee emp, List<TimeEntry> own, Range range) {
+    private PayrollRowDTO buildPayrollRow(Employee emp, List<TimeEntry> own, Range range,
+                                          Map<LocalDate, BonusDay> bonuses) {
         long worked = own.stream()
                 .mapToLong(WorkTimeCalculator::netMinutes).sum();
         long doubles = own.stream()
@@ -207,8 +213,20 @@ public class BusinessMetricsService {
                 .mapToLong(WorkTimeCalculator::netMinutes).sum();
         long payable = worked + doubles; // las dobles suman una vez mas
 
+        // Bono: fijo por hora neta, no se duplica en feriados.
+        long bonusMinutes = 0;
+        BigDecimal bonusAmount = BigDecimal.ZERO;
+        for (TimeEntry e : own) {
+            BonusDay bonus = bonusFor(bonuses, emp.getId(), e);
+            if (bonus != null) {
+                long net = WorkTimeCalculator.netMinutes(e);
+                bonusMinutes += net;
+                bonusAmount = bonusAmount.add(costOf(net, bonus.getAmountPerHour()));
+            }
+        }
+
         BigDecimal amount = emp.getHourlyRate() != null
-                ? costOf(payable, emp.getHourlyRate()) : null;
+                ? costOf(payable, emp.getHourlyRate()).add(bonusAmount) : null;
 
         Payment payment = paymentRepository
                 .findFirstByEmployeeIdAndFromDateAndToDate(
@@ -225,6 +243,8 @@ public class BusinessMetricsService {
                 .doubleHours(round2(doubles / 60.0))
                 .payableHours(round2(payable / 60.0))
                 .hourlyRate(emp.getHourlyRate())
+                .bonusMinutes(bonusMinutes)
+                .bonusAmount(bonusAmount)
                 .amount(amount)
                 .paymentId(payment != null ? payment.getId() : null)
                 .paidAt(payment != null ? payment.getCreatedAt() : null)
@@ -238,6 +258,7 @@ public class BusinessMetricsService {
     public String buildEmployeeMessage(Long employeeId, LocalDate from, LocalDate to) {
         Range range = resolveRange(from, to);
         PayrollRowDTO row = getPayrollRow(employeeId, range.from(), range.to());
+        Map<LocalDate, BonusDay> bonuses = bonusDaysIn(range);
 
         List<TimeEntry> entries = employeeEntries(employeeId, range).stream()
                 .filter(WorkTimeCalculator::isCountable)
@@ -275,6 +296,10 @@ public class BusinessMetricsService {
             if (Boolean.TRUE.equals(e.getPaidDouble())) {
                 sb.append(" *FERIADO ×2*");
             }
+            BonusDay bonus = bonusFor(bonuses, employeeId, e);
+            if (bonus != null) {
+                sb.append(" 🎁 +$").append(formatMoney(bonus.getAmountPerHour())).append("/h");
+            }
             sb.append("\n");
         }
 
@@ -284,6 +309,10 @@ public class BusinessMetricsService {
                     .append(formatMinutes(row.getDoubleMinutes())).append(" hs\n");
         }
         sb.append("Horas a pagar: ").append(formatMinutes(row.getPayableMinutes())).append(" hs\n");
+        if (row.getBonusMinutes() > 0) {
+            sb.append("🎁 Bono: ").append(formatMinutes(row.getBonusMinutes()))
+                    .append(" hs → $").append(formatMoney(row.getBonusAmount())).append("\n");
+        }
 
         if (row.getHourlyRate() != null) {
             sb.append("Valor hora: $").append(formatMoney(row.getHourlyRate())).append("\n");
@@ -291,6 +320,19 @@ public class BusinessMetricsService {
         }
 
         return sb.toString();
+    }
+
+    private Map<LocalDate, BonusDay> bonusDaysIn(Range range) {
+        return bonusDayRepository
+                .findByBonusDateBetweenOrderByBonusDateAsc(range.from(), range.to())
+                .stream()
+                .collect(Collectors.toMap(BonusDay::getBonusDate, b -> b, (a, b) -> a));
+    }
+
+    /** Bono que le corresponde a esa jornada (por el dia de entrada), o null. */
+    private BonusDay bonusFor(Map<LocalDate, BonusDay> bonuses, Long employeeId, TimeEntry e) {
+        BonusDay bonus = bonuses.get(e.getClockIn().toLocalDate());
+        return bonus != null && bonus.includes(employeeId) ? bonus : null;
     }
 
     private List<TimeEntry> employeeEntries(Long employeeId, Range range) {
@@ -311,18 +353,19 @@ public class BusinessMetricsService {
     public String buildPayrollCsv(LocalDate from, LocalDate to) {
         PayrollReportDTO report = getPayroll(from, to);
         StringBuilder sb = new StringBuilder("﻿");
-        sb.append("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Total\n");
+        sb.append("Empleado;Horas;Horas dobles;Horas a pagar;Valor hora;Bono;Total\n");
         for (PayrollRowDTO row : report.getRows()) {
             sb.append(row.getEmployeeName()).append(";")
                     .append(formatMinutes(row.getWorkedMinutes())).append(";")
                     .append(formatMinutes(row.getDoubleMinutes())).append(";")
                     .append(formatMinutes(row.getPayableMinutes())).append(";")
                     .append(row.getHourlyRate() != null ? row.getHourlyRate() : "").append(";")
+                    .append(row.getBonusMinutes() > 0 ? row.getBonusAmount() : "").append(";")
                     .append(row.getAmount() != null ? row.getAmount() : "sin valor hora")
                     .append("\n");
         }
         sb.append("TOTAL;;;").append(formatMinutes(report.getTotalPayableMinutes()))
-                .append(";;").append(report.getTotalAmount()).append("\n");
+                .append(";;;").append(report.getTotalAmount()).append("\n");
         return sb.toString();
     }
 

@@ -379,4 +379,69 @@ class FullFlowIntegrationTest {
                                 + "\",\"dayOff\":true}"))
                 .andExpect(status().isForbidden());
     }
+
+    /**
+     * Dia con bono: suma un extra fijo por hora a los elegidos, no se
+     * duplica en feriado, queda congelado en el pago y respeta el cierre.
+     */
+    @Test
+    @Order(10)
+    void bonusDayAddsToPayrollAndIsLockedOncePaid() throws Exception {
+        // El kiosco no puede cargar bonos.
+        String body = "{\"date\":\"" + manualEntryDate + "\",\"amountPerHour\":1000," +
+                "\"note\":\"Food truck + local\",\"employeeIds\":[" + employeeId + "]}";
+        mockMvc.perform(post("/api/bonus-days")
+                        .header("Authorization", "Bearer " + kioskToken)
+                        .contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+
+        MvcResult created = mockMvc.perform(post("/api/bonus-days")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.employeeNames[0]").value("Mica Gomez"))
+                .andReturn();
+        long bonusId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        // Un segundo bono el mismo dia -> 409 (se edita el existente).
+        mockMvc.perform(post("/api/bonus-days")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict());
+
+        // Feriado 8 hs x $5500 x2 = $88.000 + bono 8 hs x $1000 = $96.000
+        mockMvc.perform(get("/api/analytics/payroll?from=" + manualEntryDate + "&to=" + manualEntryDate)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0].bonusMinutes").value(480))
+                .andExpect(jsonPath("$.rows[0].bonusAmount").value(8000.00))
+                .andExpect(jsonPath("$.rows[0].amount").value(96000.00));
+
+        MvcResult paid = mockMvc.perform(post("/api/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"employeeId\":" + employeeId + "," +
+                                "\"from\":\"" + manualEntryDate + "\"," +
+                                "\"to\":\"" + manualEntryDate + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.bonusAmount").value(8000.00))
+                .andExpect(jsonPath("$.amount").value(96000.00))
+                .andReturn();
+        long paymentId = objectMapper.readTree(paid.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        // Periodo pagado: el bono no se puede borrar.
+        mockMvc.perform(delete("/api/bonus-days/" + bonusId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isConflict());
+
+        // Reabierto, si.
+        mockMvc.perform(delete("/api/payments/" + paymentId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/bonus-days/" + bonusId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+    }
 }
