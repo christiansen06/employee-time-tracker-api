@@ -26,6 +26,9 @@ mañana.
   respaldo (con tolerancia configurable); horas extra (exceso diario y semanal).
 - **Liquidación**: cuánto pagarle a cada empleado en el período (horas netas ×
   valor hora); las jornadas marcadas como **dobles** (feriados) cuentan ×2.
+- **Días con bono**: el admin elige el día, el monto por hora y qué empleados lo
+  cobran (ej. food truck + local); se suma fijo por hora neta, no se duplica en
+  feriados, queda congelado en el pago y no se puede tocar en un período pagado.
 - **Pagos**: marcar el período como pagado lo congela (las jornadas no se
   editan hasta reabrir el pago, todo auditado) y queda en el historial;
   mensaje de desglose diario listo para **WhatsApp** por empleado.
@@ -40,7 +43,7 @@ mañana.
 - Un empleado no puede quedar con dos jornadas (o dos breaks) abiertos a la
   vez ni por toques repetidos casi simultáneos: además del chequeo de
   negocio, un índice único en la base lo impide a nivel de fila.
-- Actuator (`/actuator/health`), suite de ~90 tests (unitarios + integración
+- Actuator (`/actuator/health`), suite de ~105 tests (unitarios + integración
   end-to-end, incluida una prueba de concurrencia real) y CI en GitHub Actions.
 
 ## Cómo correr
@@ -130,6 +133,7 @@ Documentación completa en Swagger (`/swagger-ui.html`).
 | Kiosco (KIOSK) | `/api/kiosk/employees`, `verify`, `clock-in/out`, `break/start|end`, `worked-hours` |
 | Fichaje propio (EMPLOYEE) | `/api/time-entries/me/*`, `/api/breaks/me/*` |
 | Jornadas (ADMIN) | ABM: `POST /api/time-entries` (alta manual de jornada olvidada, sin solapamientos), `PUT/DELETE /{id}`, `PATCH /{id}/paid-double` (feriado ×2) — todo queda en `audit_log` |
+| Bonos (ADMIN) | `GET /api/bonus-days?from&to`, `POST /api/bonus-days`, `PUT/DELETE /api/bonus-days/{id}` — monto por hora variable y empleados elegidos por día |
 | Breaks (ADMIN) | ABM del break puntual sin tocar la jornada: `POST /api/breaks`, `PUT/DELETE /{id}`. Valida que caiga dentro de la jornada y no se pise con otro break; al cerrar un break olvidado la jornada vuelve a estado de trabajo |
 | Horarios (ADMIN) | Armado del horario semanal: `GET/PUT/DELETE /api/schedules` y `POST /api/schedules/copy` para copiar la semana anterior. Cada celda es un horario, un franco o una nota libre; suma las horas planificadas por persona. El kiosco lo lee con `GET /api/kiosk/schedule`. Desde el panel se genera una imagen (Canvas, sin librerias) para compartir al grupo con el menu nativo del dispositivo |
 | Reportes (ADMIN) | `weekly-report(+/csv)`, `entries` y `employees/{id}/entries` (paginados) |

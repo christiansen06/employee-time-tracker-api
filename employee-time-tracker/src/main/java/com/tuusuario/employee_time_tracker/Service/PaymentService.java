@@ -73,6 +73,8 @@ public class PaymentService {
                 .doubleMinutes(row.getDoubleMinutes())
                 .payableMinutes(row.getPayableMinutes())
                 .hourlyRate(row.getHourlyRate())
+                .bonusMinutes(row.getBonusMinutes())
+                .bonusAmount(row.getBonusAmount())
                 .amount(row.getAmount())
                 .createdBy(currentUsername())
                 .build());
@@ -118,6 +120,8 @@ public class PaymentService {
                 .doubleMinutes(p.getDoubleMinutes())
                 .payableMinutes(p.getPayableMinutes())
                 .hourlyRate(p.getHourlyRate())
+                .bonusMinutes(p.getBonusMinutes() != null ? p.getBonusMinutes() : 0)
+                .bonusAmount(p.getBonusAmount())
                 .amount(p.getAmount())
                 .createdBy(p.getCreatedBy())
                 .createdAt(p.getCreatedAt())
