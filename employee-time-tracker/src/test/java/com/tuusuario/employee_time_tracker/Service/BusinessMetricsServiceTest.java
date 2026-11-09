@@ -265,14 +265,13 @@ class BusinessMetricsServiceTest {
         String msg = service.buildEmployeeMessage(1L, monday, monday.plusDays(6));
 
         assertThat(msg).contains("Ana Lopez");
-        assertThat(msg).contains("Lun 01/06 · 09:00–17:00 · 8:00 hs");
-        assertThat(msg).contains("Jue 04/06");
-        assertThat(msg).contains("*FERIADO ×2*");
-        assertThat(msg).contains("Horas trabajadas: 16:00 hs");
-        assertThat(msg).contains("Horas dobles (feriado ×2): 8:00 hs");
-        assertThat(msg).contains("Horas a pagar: 24:00 hs");
-        // 24 hs x $100 = $2.400
-        assertThat(msg).contains("*TOTAL: $2.400*");
+        assertThat(msg).contains("Lun 01/06 · 09:00 a 17:00 · 8:00 hs\n");
+        assertThat(msg).contains("Jue 04/06 · 09:00 a 17:00 · 8:00 hs · feriado ×2");
+        assertThat(msg).contains("16:00 hs × $100 = $1.600,00");
+        assertThat(msg).contains("+ 8:00 hs feriado (×2) × $100 = $800,00");
+        assertThat(msg).contains("Sueldo: $2.400,00");
+        assertThat(msg).contains("*TOTAL A COBRAR: $2.400,00*");
+        assertThat(msg).doesNotContain("Bono");
     }
 
     private BonusDay bonus(LocalDate day, String perHour, Employee... employees) {
@@ -351,10 +350,59 @@ class BusinessMetricsServiceTest {
 
         String msg = service.buildEmployeeMessage(1L, monday, monday.plusDays(6));
 
-        assertThat(msg).contains("Lun 01/06 · 09:00–17:00 · 8:00 hs 🎁 +$1.000/h");
-        assertThat(msg).contains("🎁 Bono: 8:00 hs → $8.000");
-        // 8 hs x $100 + $8.000
-        assertThat(msg).contains("*TOTAL: $8.800*");
+        assertThat(msg).contains("Lun 01/06 · 09:00 a 17:00 · 8:00 hs 🎁");
+        assertThat(msg).contains("💵 *Sueldo*\n8:00 hs × $100 = $800,00");
+        assertThat(msg).contains("🎁 *Bono*\n8:00 hs × $1.000 = $8.000,00");
+        assertThat(msg).contains("*TOTAL A COBRAR: $8.800,00*");
+        assertThat(msg).contains("_Sueldo $800,00 + Bono $8.000,00_");
+    }
+
+    /** El caso real de Sasha: la cuenta del mensaje cierra al centavo. */
+    @Test
+    void whatsappMessageSumsSalaryAndBonusToTheCent() {
+        Employee sasha = Employee.builder().id(7L).name("Sasha").lastName("Rocha")
+                .email("s@test.com").position("Caja").active(true)
+                .hourlyRate(new BigDecimal("5500")).build();
+        LocalDate lun = LocalDate.of(2026, 11, 2);
+        java.util.function.BiFunction<LocalDateTime, LocalDateTime, TimeEntry> entry = (in, out) ->
+                TimeEntry.builder().employee(sasha).clockIn(in).clockOut(out)
+                        .status(TimeEntryStatus.FINISHED).build();
+        when(employeeRepository.findById(7L)).thenReturn(java.util.Optional.of(sasha));
+        when(timeEntryRepository.findByEmployeeIdAndClockInBetween(eq(7L), any(), any()))
+                .thenReturn(List.of(
+                        entry.apply(lun.atTime(9, 20), lun.atTime(15, 22)),
+                        entry.apply(lun.plusDays(4).atTime(9, 30), lun.plusDays(4).atTime(20, 30)),
+                        entry.apply(lun.plusDays(5).atTime(10, 20), lun.plusDays(5).atTime(20, 50)),
+                        entry.apply(lun.plusDays(6).atTime(10, 10), lun.plusDays(6).atTime(20, 0))));
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(bonus(lun.plusDays(6), "1000", sasha)));
+
+        String msg = service.buildEmployeeMessage(7L, lun, lun.plusDays(6));
+
+        assertThat(msg).contains("Sáb 07/11");
+        assertThat(msg).contains("37:22 hs × $5.500 = $205.516,67");
+        assertThat(msg).contains("9:50 hs × $1.000 = $9.833,33");
+        assertThat(msg).contains("*TOTAL A COBRAR: $215.350,00*");
+        assertThat(msg).contains("_Sueldo $205.516,67 + Bono $9.833,33_");
+    }
+
+    @Test
+    void whatsappMessageListsEachBonusAmountSeparately() {
+        when(employeeRepository.findById(1L)).thenReturn(java.util.Optional.of(ana));
+        when(timeEntryRepository.findByEmployeeIdAndClockInBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(shift(ana, monday, 9, 11), shift(ana, monday.plusDays(1), 9, 13)));
+        BonusDay cheap = bonus(monday, "500", ana);
+        BonusDay big = bonus(monday.plusDays(1), "1000", ana);
+        when(bonusDayRepository.findByBonusDateBetweenOrderByBonusDateAsc(any(), any()))
+                .thenReturn(List.of(cheap, big));
+
+        String msg = service.buildEmployeeMessage(1L, monday, monday.plusDays(6));
+
+        assertThat(msg).contains("2:00 hs × $500 = $1.000,00");
+        assertThat(msg).contains("4:00 hs × $1.000 = $4.000,00");
+        assertThat(msg).contains("Bono: $5.000,00");
+        // 6 hs x $100 + $5.000
+        assertThat(msg).contains("*TOTAL A COBRAR: $5.600,00*");
     }
 
     @Test

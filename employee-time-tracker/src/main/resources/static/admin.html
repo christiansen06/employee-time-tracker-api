@@ -1026,7 +1026,9 @@
           '<td><strong>'+fmtHM(r.payableMinutes)+'</strong></td>'+
           '<td>'+(r.hourlyRate!=null?money(r.hourlyRate):'<span class="badge warn">cargar</span>')+'</td>'+
           '<td>'+(r.bonusMinutes>0?money(r.bonusAmount)+'<div class="muted" style="font-size:12px;">'+fmtHM(r.bonusMinutes)+' hs</div>':'<span class="muted">–</span>')+'</td>'+
-          '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>':'<span class="muted">–</span>')+'</td>'+
+          '<td>'+(r.amount!=null?'<strong>'+money(r.amount)+'</strong>'+
+            (r.bonusMinutes>0?'<div class="muted" style="font-size:12px;">'+money(r.baseAmount)+' + '+money(r.bonusAmount)+' bono</div>':'')
+            :'<span class="muted">–</span>')+'</td>'+
           '<td>'+acciones+'</td></tr>';
       });
       tb.innerHTML += '<tr><td><strong>TOTAL</strong></td><td></td><td></td>'+

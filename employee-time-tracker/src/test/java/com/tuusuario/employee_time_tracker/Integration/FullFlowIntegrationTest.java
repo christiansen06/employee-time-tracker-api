@@ -295,8 +295,8 @@ class FullFlowIntegrationTest {
         String text = msg.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         org.assertj.core.api.Assertions.assertThat(text)
                 .contains("Mica Gomez")
-                .contains("FERIADO ×2")
-                .contains("TOTAL: $88.000");
+                .contains("feriado ×2")
+                .contains("TOTAL A COBRAR: $88.000,00");
 
         // Reabrir el pago -> la jornada vuelve a ser editable
         mockMvc.perform(delete("/api/payments/" + paymentId)
