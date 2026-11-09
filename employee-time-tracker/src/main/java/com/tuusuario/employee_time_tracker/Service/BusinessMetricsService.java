@@ -214,19 +214,18 @@ public class BusinessMetricsService {
         long payable = worked + doubles; // las dobles suman una vez mas
 
         // Bono: fijo por hora neta, no se duplica en feriados.
-        long bonusMinutes = 0;
-        BigDecimal bonusAmount = BigDecimal.ZERO;
-        for (TimeEntry e : own) {
-            BonusDay bonus = bonusFor(bonuses, emp.getId(), e);
-            if (bonus != null) {
-                long net = WorkTimeCalculator.netMinutes(e);
-                bonusMinutes += net;
-                bonusAmount = bonusAmount.add(costOf(net, bonus.getAmountPerHour()));
-            }
-        }
+        Map<BigDecimal, Long> bonusByRate = bonusMinutesByRate(own, emp.getId(), bonuses);
+        long bonusMinutes = bonusByRate.values().stream().mapToLong(Long::longValue).sum();
+        BigDecimal bonusAmount = bonusByRate.entrySet().stream()
+                .map(b -> costOf(b.getValue(), b.getKey()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal amount = emp.getHourlyRate() != null
-                ? costOf(payable, emp.getHourlyRate()).add(bonusAmount) : null;
+        // Sueldo = horas normales + horas feriado otra vez. Cada parte se
+        // redondea a centavos por separado para que el desglose sume exacto.
+        BigDecimal baseAmount = emp.getHourlyRate() != null
+                ? costOf(worked, emp.getHourlyRate()).add(costOf(doubles, emp.getHourlyRate()))
+                : null;
+        BigDecimal amount = baseAmount != null ? baseAmount.add(bonusAmount) : null;
 
         Payment payment = paymentRepository
                 .findFirstByEmployeeIdAndFromDateAndToDate(
@@ -245,6 +244,7 @@ public class BusinessMetricsService {
                 .hourlyRate(emp.getHourlyRate())
                 .bonusMinutes(bonusMinutes)
                 .bonusAmount(bonusAmount)
+                .baseAmount(baseAmount)
                 .amount(amount)
                 .paymentId(payment != null ? payment.getId() : null)
                 .paidAt(payment != null ? payment.getCreatedAt() : null)
@@ -252,8 +252,9 @@ public class BusinessMetricsService {
     }
 
     /**
-     * Mensaje de liquidacion listo para WhatsApp: desglose dia por dia
-     * (horas netas, breaks y feriados x2) y el total a pagar.
+     * Mensaje de liquidacion listo para WhatsApp, pensado para que el
+     * empleado entienda la cuenta: dias trabajados, sueldo (horas x valor
+     * hora, feriados aparte), bono y TOTAL = sueldo + bono.
      */
     public String buildEmployeeMessage(Long employeeId, LocalDate from, LocalDate to) {
         Range range = resolveRange(from, to);
@@ -269,7 +270,7 @@ public class BusinessMetricsService {
                 java.time.format.DateTimeFormatter.ofPattern("dd/MM");
         java.time.format.DateTimeFormatter hm =
                 java.time.format.DateTimeFormatter.ofPattern("HH:mm");
-        String[] dayNames = {"Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"};
+        String[] dayNames = {"Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"};
 
         StringBuilder sb = new StringBuilder();
         sb.append("🧾 *Liquidación — ").append(row.getEmployeeName()).append("*\n");
@@ -278,48 +279,96 @@ public class BusinessMetricsService {
 
         if (entries.isEmpty()) {
             sb.append("Sin jornadas registradas en el período.\n");
+            return sb.toString();
         }
 
+        // --- Dias trabajados ---
+        sb.append("📅 *Días trabajados*\n");
         for (TimeEntry e : entries) {
             LocalDate day = e.getClockIn().toLocalDate();
-            long net = WorkTimeCalculator.netMinutes(e);
             long breaks = WorkTimeCalculator.breakMinutes(e);
 
             sb.append(dayNames[day.getDayOfWeek().getValue() - 1]).append(" ")
                     .append(day.format(dm)).append(" · ")
-                    .append(e.getClockIn().format(hm)).append("–")
+                    .append(e.getClockIn().format(hm)).append(" a ")
                     .append(e.getClockOut().format(hm));
             if (breaks > 0) {
                 sb.append(" (break ").append(formatMinutes(breaks)).append(")");
             }
-            sb.append(" · ").append(formatMinutes(net)).append(" hs");
+            sb.append(" · ").append(formatMinutes(WorkTimeCalculator.netMinutes(e))).append(" hs");
             if (Boolean.TRUE.equals(e.getPaidDouble())) {
-                sb.append(" *FERIADO ×2*");
+                sb.append(" · feriado ×2");
             }
-            BonusDay bonus = bonusFor(bonuses, employeeId, e);
-            if (bonus != null) {
-                sb.append(" 🎁 +$").append(formatMoney(bonus.getAmountPerHour())).append("/h");
+            if (bonusFor(bonuses, employeeId, e) != null) {
+                sb.append(" 🎁");
             }
             sb.append("\n");
         }
 
-        sb.append("\nHoras trabajadas: ").append(formatMinutes(row.getWorkedMinutes())).append(" hs\n");
-        if (row.getDoubleMinutes() > 0) {
-            sb.append("Horas dobles (feriado ×2): ")
-                    .append(formatMinutes(row.getDoubleMinutes())).append(" hs\n");
-        }
-        sb.append("Horas a pagar: ").append(formatMinutes(row.getPayableMinutes())).append(" hs\n");
-        if (row.getBonusMinutes() > 0) {
-            sb.append("🎁 Bono: ").append(formatMinutes(row.getBonusMinutes()))
-                    .append(" hs → $").append(formatMoney(row.getBonusAmount())).append("\n");
+        BigDecimal rate = row.getHourlyRate();
+
+        // --- Sueldo ---
+        sb.append("\n💵 *Sueldo*\n");
+        if (rate == null) {
+            sb.append(formatMinutes(row.getWorkedMinutes())).append(" hs trabajadas");
+            if (row.getDoubleMinutes() > 0) {
+                sb.append(" (").append(formatMinutes(row.getDoubleMinutes()))
+                        .append(" hs de feriado ×2)");
+            }
+            sb.append("\n_Valor hora sin cargar_\n");
+        } else {
+            BigDecimal normal = costOf(row.getWorkedMinutes(), rate);
+            sb.append(formatMinutes(row.getWorkedMinutes())).append(" hs × $")
+                    .append(formatRate(rate)).append(" = $").append(formatMoney(normal)).append("\n");
+            if (row.getDoubleMinutes() > 0) {
+                sb.append("+ ").append(formatMinutes(row.getDoubleMinutes()))
+                        .append(" hs feriado (×2) × $").append(formatRate(rate)).append(" = $")
+                        .append(formatMoney(costOf(row.getDoubleMinutes(), rate))).append("\n");
+                sb.append("Sueldo: $").append(formatMoney(row.getBaseAmount())).append("\n");
+            }
         }
 
-        if (row.getHourlyRate() != null) {
-            sb.append("Valor hora: $").append(formatMoney(row.getHourlyRate())).append("\n");
-            sb.append("*TOTAL: $").append(formatMoney(row.getAmount())).append("*\n");
+        // --- Bono ---
+        Map<BigDecimal, Long> bonusByRate = bonusMinutesByRate(entries, employeeId, bonuses);
+        boolean hasBonus = row.getBonusMinutes() > 0;
+        if (hasBonus) {
+            sb.append("\n🎁 *Bono*\n");
+            bonusByRate.forEach((perHour, minutes) -> sb.append(formatMinutes(minutes))
+                    .append(" hs × $").append(formatRate(perHour)).append(" = $")
+                    .append(formatMoney(costOf(minutes, perHour))).append("\n"));
+            if (bonusByRate.size() > 1) {
+                sb.append("Bono: $").append(formatMoney(row.getBonusAmount())).append("\n");
+            }
+        }
+
+        // --- Total ---
+        if (rate != null) {
+            sb.append("\n━━━━━━━━━━━━\n");
+            sb.append("💰 *TOTAL A COBRAR: $").append(formatMoney(row.getAmount())).append("*\n");
+            if (hasBonus) {
+                sb.append("_Sueldo $").append(formatMoney(row.getBaseAmount()))
+                        .append(" + Bono $").append(formatMoney(row.getBonusAmount())).append("_\n");
+            }
+        } else if (hasBonus) {
+            sb.append("\n_Bono a cobrar: $").append(formatMoney(row.getBonusAmount()))
+                    .append(" (falta el valor hora para el total)_\n");
         }
 
         return sb.toString();
+    }
+
+    /** Minutos con bono agrupados por monto por hora (de menor a mayor). */
+    private Map<BigDecimal, Long> bonusMinutesByRate(List<TimeEntry> entries, Long employeeId,
+                                                     Map<LocalDate, BonusDay> bonuses) {
+        Map<BigDecimal, Long> byRate = new java.util.TreeMap<>();
+        for (TimeEntry e : entries) {
+            BonusDay bonus = bonusFor(bonuses, employeeId, e);
+            if (bonus != null) {
+                byRate.merge(bonus.getAmountPerHour().stripTrailingZeros(),
+                        WorkTimeCalculator.netMinutes(e), Long::sum);
+            }
+        }
+        return byRate;
     }
 
     private Map<LocalDate, BonusDay> bonusDaysIn(Range range) {
@@ -342,7 +391,17 @@ public class BusinessMetricsService {
                 range.to().plusDays(1).atStartOfDay());
     }
 
+    /** Montos de plata: siempre con centavos ($205.516,67). */
     private String formatMoney(BigDecimal value) {
+        java.text.NumberFormat nf = java.text.NumberFormat.getNumberInstance(
+                java.util.Locale.forLanguageTag("es-AR"));
+        nf.setMinimumFractionDigits(2);
+        nf.setMaximumFractionDigits(2);
+        return nf.format(value);
+    }
+
+    /** Valores por hora: sin decimales si son enteros ($5.500). */
+    private String formatRate(BigDecimal value) {
         java.text.NumberFormat nf = java.text.NumberFormat.getNumberInstance(
                 java.util.Locale.forLanguageTag("es-AR"));
         nf.setMinimumFractionDigits(0);

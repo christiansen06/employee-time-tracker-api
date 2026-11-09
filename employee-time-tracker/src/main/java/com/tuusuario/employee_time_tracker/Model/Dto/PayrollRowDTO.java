@@ -26,6 +26,8 @@ public class PayrollRowDTO {
     long bonusMinutes;
     /** Total del bono (fijo por hora, no se duplica en feriados). */
     BigDecimal bonusAmount;
+    /** Sueldo sin bono: horas + horas feriado otra vez, x valor hora. Null si no hay valor hora. */
+    BigDecimal baseAmount;
     /** payableMinutes/60 x hourlyRate + bonusAmount. Null si no hay valor hora. */
     BigDecimal amount;
     /** Pago exacto de este periodo, si ya se realizo (sino null). */
