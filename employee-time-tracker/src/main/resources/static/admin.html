@@ -1631,7 +1631,7 @@
   });
   setRangeDays(30);
 
-  const money = v => "$ " + Number(v).toLocaleString("es-AR",{maximumFractionDigits:0});
+  const money = v => "$ " + Number(v).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2});
 
   async function loadAnalytics(){
     flash($("anMsg"),"");
